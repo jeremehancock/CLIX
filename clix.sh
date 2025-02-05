@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 # Show version
 show_version() {
@@ -98,9 +98,30 @@ update_script() {
     
     # Download new version
     if curl -o "$script_name" -L https://raw.githubusercontent.com/jeremehancock/CLIX/main/clix.sh; then
+        # Preserve Plex URL and Token from the last backup
+        local last_backup=$(ls -t "$backup_dir"/*.backup | head -n 1)
+        
+        if [[ -n "$last_backup" ]]; then
+            # Extract Plex URL and Token from the last backup
+            local old_plex_url=$(grep "^PLEX_URL=" "$last_backup" | cut -d'"' -f2)
+            local old_plex_token=$(grep "^PLEX_TOKEN=" "$last_backup" | cut -d'"' -f2)
+            
+            # Update new script with preserved credentials
+            if [[ -n "$old_plex_url" ]]; then
+                sed -i "s|^PLEX_URL=.*|PLEX_URL=\"$old_plex_url\"|" "$script_name"
+            fi
+            
+            if [[ -n "$old_plex_token" ]]; then
+                sed -i "s|^PLEX_TOKEN=.*|PLEX_TOKEN=\"$old_plex_token\"|" "$script_name"
+            fi
+        fi
+        
         chmod +x "$script_name"
         echo -e "Successfully updated script"
         echo -e "Previous version backed up to $backup_file"
+        
+        # Exit after successful update to ensure credentials are used
+        exit 0
     else
         echo -e "Update failed"
         # Restore backup
