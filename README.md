@@ -35,7 +35,10 @@ chmod +x clix.sh
 1. Clone the repository:
 ```bash
 git clone https://github.com/jeremehancock/CLIX.git
+
+cd CLIX
 ```
+
 
 2. Make the script executable:
 ```bash
