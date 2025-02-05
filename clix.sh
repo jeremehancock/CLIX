@@ -130,6 +130,7 @@ update_script() {
     fi
 }
 
+
 # Show help menu
 show_help() {
     cat << EOF
