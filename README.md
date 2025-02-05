@@ -25,8 +25,13 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 
 ### Quick Install
 
+1. Download CLIX:
 ```bash
 curl -o clix.sh https://raw.githubusercontent.com/jeremehancock/CLIX/main/clix.sh
+```
+
+2. Make the script executable:
+```bash
 chmod +x clix.sh
 ```
 
