@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 # Show version
 show_version() {
@@ -71,14 +71,28 @@ check_version() {
     fi
 }
 
-# Update script
 update_script() {
     if ! command -v curl &> /dev/null; then
         echo -e "Error: curl is required for updating"
         return 1
     fi
 
-    echo -e "Updating script..."
+    # Check for updates first
+    local remote_version
+    remote_version=$(curl -s https://raw.githubusercontent.com/jeremehancock/CLIX/refs/heads/main/clix.sh | grep "^VERSION=" | cut -d'"' -f2)
+    
+    if [[ -z "$remote_version" ]]; then
+        echo -e "Error: Could not fetch remote version"
+        return 1
+    fi
+
+    # Compare versions (assuming semantic versioning x.y.z format)
+    if [[ "$remote_version" == "$VERSION" ]]; then
+        echo -e "No updates available. You are running the latest version (v${VERSION})."
+        return 0
+    fi
+
+    echo -e "Update available: v$VERSION → v$remote_version"
     
     # Create backups directory if it doesn't exist
     local backup_dir="backups"
@@ -129,8 +143,6 @@ update_script() {
         return 1
     fi
 }
-
-
 
 # Show help menu
 show_help() {
@@ -206,30 +218,94 @@ get_libraries() {
     echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n
 }
 
-# Get library contents
+# Get library contents with pagination
 get_library_contents() {
     local library_key="$1"
-    local response
-    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all")
-
-    if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
-    fi
-
+    local page=1
+    local page_size=50
+    local all_items=""
+    
+    # Determine library type and name for progress display
+    local libraries
+    libraries=$(get_libraries | grep "|${library_key}|")
+    local library_name
+    library_name=$(echo "$libraries" | cut -d'|' -f2)
+    
+    # Retrieve total size first
+    local total_size
+    local first_response
+    first_response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1")
+    total_size=$(echo "$first_response" | xmlstarlet sel -t -v "/MediaContainer/@totalSize" -n)
+    
+    # Determine item type from first response
     local first_item_type
-    first_item_type=$(echo "$response" | xmlstarlet sel -t -m "//Video | //Directory" -v "name()" -n | head -n 1)
-
-    if [[ "$first_item_type" == "Video" ]]; then
-        # Modified to put ID at the end for movies
-        echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n
-    elif [[ "$first_item_type" == "Directory" ]]; then
-        # Modified to put ID at the end for shows/artists
-        echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n
-    else
-        echo "Error: Could not determine media type."
-        exit 1
+    first_item_type=$(echo "$first_response" | xmlstarlet sel -t -m "//Video | //Directory" -v "name()" -n | head -n 1)
+    if [[ -z "$first_item_type" ]]; then
+        echo "Error: No items found in library." >&2
+        return 1
     fi
+
+    # Redirect progress to stderr to keep stdout clean for piping
+    {
+        # Clear terminal before starting
+        clear >&2
+
+        echo "Retrieving contents of library: $library_name" >&2
+        echo "Total items: $total_size" >&2
+    
+        while true; do
+            # Use explicit arithmetic expansion
+            local start_index=$((($page - 1) * $page_size))
+            local response
+            response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=${start_index}&X-Plex-Container-Size=${page_size}")
+            if [[ -z "$response" ]]; then
+                echo "Error: No response from Plex server." >&2
+                return 1
+            fi
+            local current_items
+            if [[ "$first_item_type" == "Video" ]]; then
+                # Modified to put ID at the end for movies
+                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n)
+            elif [[ "$first_item_type" == "Directory" ]]; then
+                # Modified to put ID at the end for shows/artists
+                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n)
+            else
+                echo "Error: Could not determine media type." >&2
+                return 1
+            fi
+            # If no items returned, we've reached the end
+            if [[ -z "$current_items" ]]; then
+                break
+            fi
+            # Append current page's items
+            all_items+="$current_items"$'\n'
+            # Calculate and display progress
+            local current_count=$((page * page_size))
+            if [[ $current_count -gt "$total_size" ]]; then
+                current_count="$total_size"
+            fi
+            
+            # Progress percentage
+            local progress_percent=$((current_count * 100 / total_size))
+            
+            # Progress bar (crude but informative)
+            printf "\rRetrieving items: [%-50s] %d%% (%d/%d)" \
+                "$(printf "#%.0s" $(seq 1 $((progress_percent / 2))))" \
+                "$progress_percent" "$current_count" "$total_size" >&2
+            # If we've retrieved all items, break the loop
+            if [[ $((page * page_size)) -ge "$total_size" ]]; then
+                break
+            fi
+            # Increment page
+            ((page++))
+        done
+        # New line and clear after progress bar
+        echo "" >&2
+        clear >&2
+    }
+    
+    # Return the list to stdout
+    echo "$all_items" | sed '/^$/d'
 }
 
 # Get Plex streaming URL
@@ -340,14 +416,14 @@ play_media() {
 
 # Display help in pager
 display_help() {
-    clear
+    clear >&2
     show_help
     echo -e "\nPress q to return to main menu..."
     read -n 1 key
     while [[ $key != "q" ]]; do
         read -n 1 key
     done
-    clear
+    clear >&2
 }
 
 # Select media with error handling
@@ -522,7 +598,7 @@ select_media() {
 # Main menu
 main_menu() {
     local choice
-    choice=$(echo -e "Movies\nTV Shows\nMusic\nUpdate\nHelp\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Select a Media Type > ")
+    choice=$(echo -e "Movies\nTV Shows\nMusic\n----------\nUpdate\nHelp\n----------\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Select a Media Type > ")
     
     case "$choice" in
         Movies) select_media "movie" ;;
@@ -536,6 +612,9 @@ main_menu() {
             clear
             ;;
         Help) display_help ;;
+        "----------") 
+            # Do nothing for the second separator
+            ;;
         Quit) exit 0 ;;
         *) echo "Invalid selection" ;;
     esac
