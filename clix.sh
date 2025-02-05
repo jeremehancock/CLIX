@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.1"
+VERSION="1.0.2"
 
 # Show version
 show_version() {
@@ -129,6 +129,7 @@ update_script() {
         return 1
     fi
 }
+
 
 
 # Show help menu
