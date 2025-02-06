@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <!-- Terminal Window Background with rounded corners -->
+  <rect x="20" y="20" width="200" height="200" fill="white" stroke="black" stroke-width="12" rx="20" ry="20"/>
+  
+  <!-- Terminal Window Header with rounded top corners -->
+  <path d="M40,20 h160 a20,20 0 0 1 20,20 v20 h-200 v-20 a20,20 0 0 1 20,-20" fill="black"/>
+  
+  <!-- Window Controls -->
+  <circle cx="45" cy="40" r="8" fill="white"/>
+  <circle cx="75" cy="40" r="8" fill="white"/>
+  <circle cx="105" cy="40" r="8" fill="white"/>
+  
+  <!-- Play Button with rounded corners -->
+  <path d="M90,100 L90,160 Q90,165 95,162.5 L150,130 Q155,127.5 150,125 L95,97.5 Q90,95 90,100" fill="black"/>
+</svg>
