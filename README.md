@@ -18,13 +18,13 @@ Note: CLIX is for Linux only
 
 ![Main Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/main-menu.png "Main Menu")
 
-![Movies Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/movies-menu.png "Movies Menu")
+![Movies Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/movies.png "Movies Menu")
 
-![TV Shows Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/tv-menu.png "TV Shows Menu")
+![TV Shows Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/tv.png "TV Shows Menu")
 
-![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music-menu.png "Music Menu")
+![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music.png "Music Menu")
 
-![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help-screen.png "Help Screen")
+![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help.png "Help Screen")
 
 ## Requirements
 
