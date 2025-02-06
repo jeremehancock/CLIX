@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.3"
+VERSION="1.0.4"
 
 # Show version
 show_version() {
@@ -158,7 +158,7 @@ NAVIGATION:
     ↑/↓     Move up/down in menus
     Enter   Select current item
     ESC     Go back to previous menu
-    Ctrl+C  Exit the program
+    Ctrl+C  Exit the program or Exit from Music track
 
 MENU STRUCTURE:
     1. Main Menu
@@ -408,9 +408,12 @@ play_media() {
     if [[ -n "$media_url" ]]; then
         echo "Playing $media_type..."
         mpv "$media_url"
+        clear  # Clear screen after playback
+        return 0  # Return success to indicate playback completed
     else
         echo "Error: Could not retrieve stream URL."
         read -p "Press Enter to continue..." 
+        return 1
     fi
 }
 
@@ -426,7 +429,7 @@ display_help() {
     clear >&2
 }
 
-# Select media with error handling
+# Select media with error handling and context preservation
 select_media() {
     local library_type="$1"
 
@@ -440,30 +443,35 @@ select_media() {
                 return 1
             fi
 
-            local chosen_library
-            chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Movie Library" --prompt="Select a Movie Library > ")
-            
-            if [[ -z "$chosen_library" ]]; then
-                return 1
-            fi
+            while true; do
+                local chosen_library
+                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Movie Library" --prompt="Search Movie Libraries > ")
+                
+                if [[ -z "$chosen_library" ]]; then
+                    return 1
+                fi
 
-            local lib_key
-            lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
-            
-            local movies
-            movies=$(get_library_contents "$lib_key")
-            
-            local chosen_movie
-            chosen_movie=$(echo "$movies" | cut -d'|' -f1 | fzf --reverse --header="Select Movie" --prompt="Select a Movie > ")
-            
-            if [[ -z "$chosen_movie" ]]; then
-                return 1
-            fi
+                local lib_key
+                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                
+                while true; do
+                    local movies
+                    movies=$(get_library_contents "$lib_key")
+                    
+                    local chosen_movie
+                    chosen_movie=$(echo "$movies" | cut -d'|' -f1 | fzf --reverse --header="Select Movie" --prompt="Search Movies > ")
+                    
+                    if [[ -z "$chosen_movie" ]]; then
+                        break  # Go back to library selection
+                    fi
 
-            local movie_key
-            movie_key=$(echo "$movies" | grep "^${chosen_movie}|" | cut -d'|' -f2)
-            
-            play_media "$movie_key" "movie"
+                    local movie_key
+                    movie_key=$(echo "$movies" | grep "^${chosen_movie}|" | cut -d'|' -f2)
+                    
+                    play_media "$movie_key" "movie"
+                    # Continue in movie selection after playback
+                done
+            done
             ;;
         
         show)
@@ -475,56 +483,68 @@ select_media() {
                 return 1
             fi
 
-            local chosen_library
-            chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select TV Show Library" --prompt="Select a TV Show Library > ")
-            
-            if [[ -z "$chosen_library" ]]; then
-                return 1
-            fi
+            while true; do
+                local chosen_library
+                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select TV Show Library" --prompt="Search TV Show Libraries > ")
+                
+                if [[ -z "$chosen_library" ]]; then
+                    return 1
+                fi
 
-            local lib_key
-            lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
-            
-            local shows
-            shows=$(get_library_contents "$lib_key")
-            
-            local chosen_show
-            chosen_show=$(echo "$shows" | cut -d'|' -f1 | fzf --reverse --header="Select TV Show" --prompt="Select a TV Show > ")
-            
-            if [[ -z "$chosen_show" ]]; then
-                return 1
-            fi
+                local lib_key
+                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                
+                while true; do
+                    local shows
+                    shows=$(get_library_contents "$lib_key")
+                    
+                    local chosen_show
+                    chosen_show=$(echo "$shows" | cut -d'|' -f1 | fzf --reverse --header="Select TV Show" --prompt="Search TV Shows > ")
+                    
+                    if [[ -z "$chosen_show" ]]; then
+                        break  # Go back to library selection
+                    fi
 
-            local show_key
-            show_key=$(echo "$shows" | grep "^${chosen_show}|" | cut -d'|' -f2)
-            
-            local seasons
-            seasons=$(get_seasons "$show_key")
-            
-            local chosen_season
-            chosen_season=$(echo "$seasons" | cut -d'|' -f1 | fzf --reverse --header="Select Season" --prompt="Select a Season > ")
-            
-            if [[ -z "$chosen_season" ]]; then
-                return 1
-            fi
+                    local show_key
+                    show_key=$(echo "$shows" | grep "^${chosen_show}|" | cut -d'|' -f2)
+                    
+                    while true; do
+                        local seasons
+                        seasons=$(get_seasons "$show_key")
+                        
+                        local chosen_season
+                        chosen_season=$(echo "$seasons" | cut -d'|' -f1 | fzf --reverse --header="TV Show: $chosen_show
+Select Season" --prompt="Search Seasons > ")
+                        
+                        if [[ -z "$chosen_season" ]]; then
+                            break  # Go back to show selection
+                        fi
 
-            local season_key
-            season_key=$(echo "$seasons" | grep "^${chosen_season}|" | cut -d'|' -f2)
+                        local season_key
+                        season_key=$(echo "$seasons" | grep "^${chosen_season}|" | cut -d'|' -f2)
 
-            local episodes
-            episodes=$(get_episodes "$season_key")
-            
-            local chosen_episode
-            chosen_episode=$(echo "$episodes" | cut -d'|' -f1 | fzf --reverse --header="Select Episode" --prompt="Select an Episode > ")
-            
-            if [[ -z "$chosen_episode" ]]; then
-                return 1
-            fi
+                        while true; do
+                            local episodes
+                            episodes=$(get_episodes "$season_key")
+                            
+                            local chosen_episode
+                            chosen_episode=$(echo "$episodes" | cut -d'|' -f1 | fzf --reverse --header="TV Show: $chosen_show
+Season: $chosen_season
+Select Episode" --prompt="Search Episodes > ")
+                            
+                            if [[ -z "$chosen_episode" ]]; then
+                                break  # Go back to season selection
+                            fi
 
-            local episode_key
-            episode_key=$(echo "$episodes" | grep "^${chosen_episode}|" | cut -d'|' -f2)
-            
-            play_media "$episode_key" "episode"
+                            local episode_key
+                            episode_key=$(echo "$episodes" | grep "^${chosen_episode}|" | cut -d'|' -f2)
+                            
+                            play_media "$episode_key" "episode"
+                            # Continue in episode selection after playback
+                        done
+                    done
+                done
+            done
             ;;
         
         music)
@@ -536,56 +556,68 @@ select_media() {
                 return 1
             fi
 
-            local chosen_library
-            chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Music Library" --prompt="Select a Music Library > ")
-            
-            if [[ -z "$chosen_library" ]]; then
-                return 1
-            fi
+            while true; do
+                local chosen_library
+                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Music Library" --prompt="Search Music Libraries > ")
+                
+                if [[ -z "$chosen_library" ]]; then
+                    return 1
+                fi
 
-            local lib_key
-            lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
-            
-            local artists
-            artists=$(get_library_contents "$lib_key")
-            
-            local chosen_artist
-            chosen_artist=$(echo "$artists" | cut -d'|' -f1 | fzf --reverse --header="Select Artist" --prompt="Select an Artist > ")
-            
-            if [[ -z "$chosen_artist" ]]; then
-                return 1
-            fi
+                local lib_key
+                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                
+                while true; do
+                    local artists
+                    artists=$(get_library_contents "$lib_key")
+                    
+                    local chosen_artist
+                    chosen_artist=$(echo "$artists" | cut -d'|' -f1 | fzf --reverse --header="Select Artist" --prompt="Search Artists > ")
+                    
+                    if [[ -z "$chosen_artist" ]]; then
+                        break  # Go back to library selection
+                    fi
 
-            local artist_key
-            artist_key=$(echo "$artists" | grep "^${chosen_artist}|" | cut -d'|' -f2)
-            
-            local albums
-            albums=$(get_albums "$artist_key")
-            
-            local chosen_album
-            chosen_album=$(echo "$albums" | cut -d'|' -f1 | fzf --reverse --header="Select Album" --prompt="Select an Album > ")
-            
-            if [[ -z "$chosen_album" ]]; then
-                return 1
-            fi
+                    local artist_key
+                    artist_key=$(echo "$artists" | grep "^${chosen_artist}|" | cut -d'|' -f2)
+                    
+                    while true; do
+                        local albums
+                        albums=$(get_albums "$artist_key")
+                        
+                        local chosen_album
+                        chosen_album=$(echo "$albums" | cut -d'|' -f1 | fzf --reverse --header="Artist: $chosen_artist
+Select Album" --prompt="Search Albums > ")
+                        
+                        if [[ -z "$chosen_album" ]]; then
+                            break  # Go back to artist selection
+                        fi
 
-            local album_key
-            album_key=$(echo "$albums" | grep "^${chosen_album}|" | cut -d'|' -f2)
-            
-            local tracks
-            tracks=$(get_tracks "$album_key")
-            
-            local chosen_track
-            chosen_track=$(echo "$tracks" | cut -d'|' -f1 | fzf --reverse --header="Select Track" --prompt="Select a Track > ")
-            
-            if [[ -z "$chosen_track" ]]; then
-                return 1
-            fi
+                        local album_key
+                        album_key=$(echo "$albums" | grep "^${chosen_album}|" | cut -d'|' -f2)
+                        
+                        while true; do
+                            local tracks
+                            tracks=$(get_tracks "$album_key")
+                            
+                            local chosen_track
+                            chosen_track=$(echo "$tracks" | cut -d'|' -f1 | fzf --reverse --header="Artist: $chosen_artist
+Album: $chosen_album
+Select Track" --prompt="Search Tracks > ")
+                            
+                            if [[ -z "$chosen_track" ]]; then
+                                break  # Go back to album selection
+                            fi
 
-            local track_key
-            track_key=$(echo "$tracks" | grep "^${chosen_track}|" | cut -d'|' -f2)
-            
-            play_media "$track_key" "music"
+                            local track_key
+                            track_key=$(echo "$tracks" | grep "^${chosen_track}|" | cut -d'|' -f2)
+                            
+                            play_media "$track_key" "music"
+                            # Continue in track selection after playback
+                        done
+                    done
+                done
+            done
             ;;
         
         *)
@@ -598,7 +630,7 @@ select_media() {
 # Main menu
 main_menu() {
     local choice
-    choice=$(echo -e "Movies\nTV Shows\nMusic\n----------\nUpdate\nHelp\n----------\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Select a Media Type > ")
+    choice=$(echo -e "Movies\nTV Shows\nMusic\n----------\nUpdate\nHelp\n----------\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Search Menu > ")
     
     case "$choice" in
         Movies) select_media "movie" ;;
