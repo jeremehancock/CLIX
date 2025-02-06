@@ -87,9 +87,9 @@ To find your Plex token, follow the instructions here: [Finding an authenticatio
 ### Command Line Options
 
 ```
--h          Show help message
--v          Show version information
--u          Update to latest version
+-h		Show help message
+-v		Show version information
+-u		Update to latest version
 ```
 
 ### Navigation Controls
@@ -111,7 +111,7 @@ To find your Plex token, follow the instructions here: [Finding an authenticatio
    - Quit
 
 2. Library Selection
-   - Select your preferred library type
+   - Select your library
 
 3. Media Selection
    - Movies: Browse and select movie

@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.4"
+VERSION="1.0.5"
 
 # Show version
 show_version() {
@@ -159,6 +159,7 @@ NAVIGATION:
     Enter   Select current item
     ESC     Go back to previous menu
     Ctrl+C  Exit the program or Exit from Music track
+    Type to search - Fuzzy finding in any menu
 
 MENU STRUCTURE:
     1. Main Menu
@@ -176,10 +177,6 @@ MENU STRUCTURE:
         Movies: Select movie from list
         TV Shows: Select show → season → episode
         Music: Select artist → album → track
-
-NOTE: 
-    - Use fuzzy search by typing to quickly find items
-    - Updates can be performed via -u option or Update menu item
 
 DEPENDENCIES:
     Required: curl, xmlstarlet, fzf, mpv
