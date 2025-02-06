@@ -14,6 +14,18 @@ Note: CLIX is for Linux only
 - Built-in update mechanism
 - Robust error handling and dependency checking
 
+## Screenshots
+
+![Main Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/main-menu.png "Main Menu")
+
+![Movies Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/movies-menu.png "Movies Menu")
+
+![TV Shows Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/tv-menu.png "TV Shows Menu")
+
+![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music-menu.png "Music Menu")
+
+![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help-screen.png "Help Screen")
+
 ## Requirements
 
 - A Plex Media Server
