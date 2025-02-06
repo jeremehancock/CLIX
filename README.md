@@ -1,3 +1,4 @@
+
 <h1><img src="https://raw.githubusercontent.com/jeremehancock/CLIX/main/icons/clix-icon.png" height="50" /> CLIX</h1>
 
 ## A Plex Terminal Media Player
