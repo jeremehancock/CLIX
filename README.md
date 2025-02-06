@@ -1,4 +1,4 @@
-<h1><img src="https://raw.githubusercontent.com/jeremehancock/CLIX/main/icons/clix-icon.png" height="50" style="margin-bottom: -10px" /> CLIX: A Plex Terminal Media Player</h1>
+<h1><img src="https://raw.githubusercontent.com/jeremehancock/CLIX/main/icons/clix-icon.png" height="30" /> CLIX: A Plex Terminal Media Player</h1>
 
 CLIX is a powerful command-line interface tool that allows you to browse and play media from your Plex Media Server directly in your terminal. It supports movies, TV shows, and music libraries with an intuitive terminal-based user interface.
 
