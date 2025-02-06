@@ -40,7 +40,7 @@ PLEX_TOKEN=""
 ########################################################################################################
 
 # Version information
-VERSION="1.0.5"
+VERSION="1.0.6"
 
 # Show version
 show_version() {
@@ -147,19 +147,19 @@ update_script() {
 # Show help menu
 show_help() {
     cat << EOF
-Plex Terminal Player v${VERSION} - Navigation Guide
+CLIX v${VERSION} - Guide
 
 OPTIONS:
-    -h          Show this help message
-    -v          Show version information
-    -u          Update to the latest version
+    -h		Show this help message
+    -v		Show version information
+    -u		Update to the latest version
 
 NAVIGATION:
-    ↑/↓     Move up/down in menus
+    ↑/↓		Move up/down in menus
     Enter   Select current item
     ESC     Go back to previous menu
     Ctrl+C  Exit the program or Exit from Music track
-    Type to search - Fuzzy finding in any menu
+    Type to search  Fuzzy finding in any menu
 
 MENU STRUCTURE:
     1. Main Menu
