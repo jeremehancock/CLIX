@@ -16,15 +16,15 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 
 ## Screenshots
 
-![Main Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/main.png "Main Menu")
+![Main Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/main-2.png "Main Menu")
 
-![Movies Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/movies-menu.png "Movies Menu")
+![Movies Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/movies-2.png "Movies Menu")
 
-![TV Shows Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/tv-menu.png "TV Shows Menu")
+![TV Shows Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/tv-2.png "TV Shows Menu")
 
-![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music-menu.png "Music Menu")
+![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music-2.png "Music Menu")
 
-![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help-screen.png "Help Screen")
+![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help-2.png "Help Screen")
 
 ## Requirements
 
