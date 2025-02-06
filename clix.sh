@@ -44,7 +44,7 @@ VERSION="1.0.6"
 
 # Show version
 show_version() {
-    echo "Plex Terminal Player v${VERSION}"
+    echo "CLIX v${VERSION}"
     check_version
 }
 
@@ -686,7 +686,7 @@ main() {
     # Show quick tip at startup
     clear
     echo "-------------------------------------------------------------------------"
-    echo "Plex Terminal Player v${VERSION}"
+    echo "CLIX v${VERSION}"
     echo "Tip: Press ESC to go back to previous menu, or select Help for more info"
     echo "-------------------------------------------------------------------------"
     sleep 2
