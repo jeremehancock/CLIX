@@ -132,6 +132,12 @@ When updating:
 - Permissions are preserved
 - Version checking ensures you're always up to date
 
+## Note
+
+CLIX needs to be on the same network as your Plex Media Server to run. 
+
+If you want to connect remotely you will need to use something like [Tailscale](https://tailscale.com) to ensure that CLIX can communicate with your Plex Media Server.
+
 ## License
 
 [MIT License](LICENSE)
