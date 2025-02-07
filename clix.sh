@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.0.9"
+VERSION="1.1.0"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -689,6 +689,15 @@ download_media() {
     local media_type="$2"
     local title="$3"
     local additional_path="$4"
+    
+    echo -n "Do you want to proceed with the download? [y/N] "
+    read -r response
+    clear
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        echo "Download cancelled."
+        read -p "Press Enter to continue..." 
+        return 0
+    fi
     
     local media_url
     media_url=$(get_stream_url "$media_key" "$media_type")
