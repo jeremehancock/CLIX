@@ -27,7 +27,7 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 
 ![Music Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/music.png "Music Menu")
 
-![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help.png "Help Screen")
+![Help Screen](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/help-screen.png "Help Screen")
 
 ## Requirements
 
