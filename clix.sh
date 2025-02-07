@@ -39,16 +39,13 @@ PLEX_TOKEN=""
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-# Version information
-VERSION="1.0.6"
+VERSION="1.0.7"
 
-# Show version
 show_version() {
     echo "CLIX v${VERSION}"
     check_version
 }
 
-# Check for updates
 check_version() {
     if ! command -v curl &> /dev/null; then
         echo -e "Error: curl is required for version checking"
@@ -144,7 +141,6 @@ update_script() {
     fi
 }
 
-# Show help menu
 show_help() {
     cat << EOF
 CLIX v${VERSION} - Guide
@@ -183,7 +179,6 @@ DEPENDENCIES:
 EOF
 }
 
-# Dependencies check
 check_dependencies() {
     local deps=("curl" "xmlstarlet" "fzf" "mpv")
     local missing=()
@@ -201,7 +196,104 @@ check_dependencies() {
     fi
 }
 
-# Get Plex libraries
+check_plex_credentials() {
+    echo "Checking Plex server connection..."
+    
+    # Check if PLEX_URL and PLEX_TOKEN are set
+    if [ -z "$PLEX_URL" ] || [ -z "$PLEX_TOKEN" ]; then
+        echo "Error: Plex URL or token not set"
+        echo "Please edit this script and add your Plex credentials"
+        exit 1
+    fi
+    
+    # First verify basic connectivity
+    local basic_response
+    basic_response=$(curl -s -m 10 "${PLEX_URL}/identity")
+    
+    if [[ -z "$basic_response" ]]; then
+        echo "Error: Could not connect to Plex server at ${PLEX_URL}"
+        echo "Please check if:"
+        echo "1. The Plex server URL is correct"
+        echo "2. The Plex server is running"
+        echo "3. Your network connection is working"
+        exit 1
+    fi
+
+    # Now verify token access by attempting to list libraries
+    local auth_response
+    auth_response=$(curl -s -m 10 -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
+    
+    # Check if we can actually access library data
+    if ! echo "$auth_response" | xmlstarlet sel -t -v "/MediaContainer" &>/dev/null; then
+        echo "Error: Invalid Plex token or unauthorized access"
+        echo "The server is reachable, but the provided token does not have proper access permissions"
+        echo "Please check your Plex token and try again"
+        exit 1
+    fi
+
+    # Get server name
+    local server_info
+    server_info=$(curl -s -m 10 -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/")
+    
+    local server_name
+    server_name=$(echo "$server_info" | xmlstarlet sel -t -v "/MediaContainer/@friendlyName" 2>/dev/null)
+    
+    if [[ -z "$server_name" ]]; then
+        server_name=$(echo "$server_info" | xmlstarlet sel -t -v "/MediaContainer/@title" 2>/dev/null || echo "Unknown")
+    fi
+
+    # Count available libraries as additional verification
+    local library_count
+    library_count=$(echo "$auth_response" | xmlstarlet sel -t -v "count(/MediaContainer/Directory)")
+    
+    echo "Successfully connected to Plex server: $server_name"
+    echo "Found $library_count available libraries"
+    sleep 2
+}
+
+main() {
+    # First check dependencies and credentials before parsing arguments
+    check_dependencies
+    check_plex_credentials
+    
+    # Parse command line arguments
+    while getopts "hvu" opt; do
+        case ${opt} in
+            h )
+                show_help
+                exit 0
+                ;;
+            v )
+                show_version
+                exit 0
+                ;;
+            u )
+                update_script
+                exit 0
+                ;;
+            \? )
+                echo "Invalid Option: -$OPTARG" 1>&2
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    shift $((OPTIND -1))
+    
+    # Show quick tip at startup
+    clear
+    echo "-------------------------------------------------------------------------"
+    echo "CLIX v${VERSION}"
+    echo "Tip: Press ESC to go back to previous menu, or select Help for more info"
+    echo "-------------------------------------------------------------------------"
+    sleep 2
+    clear
+    
+    while true; do
+        main_menu
+    done
+}
+
 get_libraries() {
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
@@ -215,7 +307,6 @@ get_libraries() {
     echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n
 }
 
-# Get library contents with pagination
 get_library_contents() {
     local library_key="$1"
     local page=1
@@ -305,7 +396,6 @@ get_library_contents() {
     echo "$all_items" | sed '/^$/d'
 }
 
-# Get Plex streaming URL
 get_stream_url() {
     local media_key="$1"
     local media_type="$2"
@@ -329,7 +419,6 @@ get_stream_url() {
     fi
 }
 
-# Get albums for an artist
 get_albums() {
     local artist_key="$1"
     local response
@@ -345,7 +434,6 @@ get_albums() {
     echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n
 }
 
-# Get tracks for an album
 get_tracks() {
     local album_key="$1"
     local response
@@ -361,7 +449,6 @@ get_tracks() {
     echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
 }
 
-# Get seasons for a TV show
 get_seasons() {
     local show_key="$1"
     local response
@@ -378,7 +465,6 @@ get_seasons() {
     grep -v "^All episodes|" | sort -V
 }
 
-# Get episodes for a season
 get_episodes() {
     local season_key="$1"
     local response
@@ -394,17 +480,17 @@ get_episodes() {
     echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
 }
 
-# Play media using mpv
 play_media() {
     local media_key="$1"
     local media_type="$2"
+    local title="$3"
 
     local media_url
     media_url=$(get_stream_url "$media_key" "$media_type")
 
     if [[ -n "$media_url" ]]; then
-        echo "Playing $media_type..."
-        mpv "$media_url"
+        echo "Playing $media_type: $title"
+        mpv --title="$title" "$media_url"
         clear  # Clear screen after playback
         return 0  # Return success to indicate playback completed
     else
@@ -414,7 +500,6 @@ play_media() {
     fi
 }
 
-# Display help in pager
 display_help() {
     clear >&2
     show_help
@@ -426,7 +511,6 @@ display_help() {
     clear >&2
 }
 
-# Select media with error handling and context preservation
 select_media() {
     local library_type="$1"
 
@@ -465,7 +549,7 @@ select_media() {
                     local movie_key
                     movie_key=$(echo "$movies" | grep "^${chosen_movie}|" | cut -d'|' -f2)
                     
-                    play_media "$movie_key" "movie"
+                    play_media "$movie_key" "movie" "$chosen_movie"
                     # Continue in movie selection after playback
                 done
             done
@@ -536,7 +620,9 @@ Select Episode" --prompt="Search Episodes > ")
                             local episode_key
                             episode_key=$(echo "$episodes" | grep "^${chosen_episode}|" | cut -d'|' -f2)
                             
-                            play_media "$episode_key" "episode"
+                            # Create a formatted title for the episode
+                            local episode_title="$chosen_show - $chosen_season - $chosen_episode"
+                            play_media "$episode_key" "episode" "$episode_title"
                             # Continue in episode selection after playback
                         done
                     done
@@ -609,7 +695,9 @@ Select Track" --prompt="Search Tracks > ")
                             local track_key
                             track_key=$(echo "$tracks" | grep "^${chosen_track}|" | cut -d'|' -f2)
                             
-                            play_media "$track_key" "music"
+                            # Create a formatted title for the music track
+                            local track_title="$chosen_artist - $chosen_album - $chosen_track"
+                            play_media "$track_key" "music" "$track_title"
                             # Continue in track selection after playback
                         done
                     done
@@ -624,10 +712,15 @@ Select Track" --prompt="Search Tracks > ")
     esac
 }
 
-# Main menu
 main_menu() {
     local choice
     choice=$(echo -e "Movies\nTV Shows\nMusic\n----------\nUpdate\nHelp\n----------\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Search Menu > ")
+    
+    # If choice is empty (ESC was pressed), just return to redraw the menu
+    if [[ -z "$choice" ]]; then
+        clear
+        return
+    fi
     
     case "$choice" in
         Movies) select_media "movie" ;;
@@ -642,15 +735,22 @@ main_menu() {
             ;;
         Help) display_help ;;
         "----------") 
-            # Do nothing for the second separator
+            # Do nothing for the separator
             ;;
         Quit) exit 0 ;;
-        *) echo "Invalid selection" ;;
+        *) 
+            echo "Invalid selection"
+            sleep 1
+            clear
+            ;;
     esac
 }
 
-# Main program
 main() {
+    # First check dependencies and credentials before parsing arguments
+    check_dependencies
+    check_plex_credentials
+    
     # Parse command line arguments
     while getopts "hvu" opt; do
         case ${opt} in
@@ -675,14 +775,6 @@ main() {
     done
     shift $((OPTIND -1))
     
-    check_dependencies
-    
-    if [ -z "$PLEX_TOKEN" ]; then
-        echo "Error: Plex token not set"
-        echo "Please edit this script and add your Plex token"
-        exit 1
-    fi
-    
     # Show quick tip at startup
     clear
     echo "-------------------------------------------------------------------------"
@@ -697,5 +789,4 @@ main() {
     done
 }
 
-# Run the program
 main "$@"
