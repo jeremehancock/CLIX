@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.6"
+VERSION="1.1.7"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -810,6 +810,41 @@ check_local_file() {
     local found_file=""
     
     case "$media_type" in
+        episode)
+            # Convert the provided path to handle both space and underscore formats
+            local base_search_dir="${SHOWS_DIR}"
+            local show_dir=$(echo "$additional_path" | cut -d'/' -f1)
+            local season_dir=$(echo "$additional_path" | cut -d'/' -f2)
+            
+            # Try both with spaces and underscores for show directory
+            local show_paths=("$show_dir" "${show_dir//_/ }")
+            
+            # Try both formats for season directory
+            local season_paths=("$season_dir" "${season_dir//_/ }")
+            
+            # Extract season and episode numbers from the title
+            if [[ "$title" =~ [Ss]eason[[:space:]]([0-9]+)[[:space:]]-[[:space:]]([0-9]+)\. ]]; then
+                local season_num=$(printf "%02d" "${BASH_REMATCH[1]}")
+                local episode_num=$(printf "%02d" "${BASH_REMATCH[2]}")
+                
+                # Try all combinations
+                for show in "${show_paths[@]}"; do
+                    for season in "${season_paths[@]}"; do
+                        search_dir="${base_search_dir}/${show}/${season}"
+                        if [[ -d "$search_dir" ]]; then
+                            # Use find with -printf to handle special characters
+                            while IFS= read -r -d $'\0' file; do
+                                if [[ "$file" =~ S${season_num}E${episode_num} ]]; then
+                                    found_file="$file"
+                                    break 3
+                                fi
+                            done < <(find "$search_dir" -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" \) -print0)
+                        fi
+                    done
+                done
+            fi
+            ;;
+            
         movie)
             search_dir="${MOVIES_DIR}"
             
@@ -822,33 +857,13 @@ check_local_file() {
                 clean_title="${clean_title} (${year})"
             fi
             
-            for ext in mkv mp4 avi; do
-                found_file=$(find "$search_dir" -type f -iname "${clean_title}.${ext}" 2>/dev/null | head -n 1)
-                if [[ -n "$found_file" ]]; then
+            # Use find with -printf to handle special characters
+            while IFS= read -r -d $'\0' file; do
+                if [[ "${file##*/}" =~ ^"${clean_title}"\.(mkv|mp4|avi)$ ]]; then
+                    found_file="$file"
                     break
                 fi
-            done
-            ;;
-            
-        episode)
-            search_dir="${SHOWS_DIR}/${additional_path}"
-            
-            if [[ -d "$search_dir" ]]; then
-                if [[ "$title" =~ ^([^-]+)[[:space:]]-[[:space:]]Season[[:space:]]([0-9]+)[[:space:]]-[[:space:]]([0-9]+)\.[[:space:]](.+)$ ]]; then
-                    local show_name="${BASH_REMATCH[1]}"
-                    local season_num=$(printf "%02d" "${BASH_REMATCH[2]}")
-                    local ep_num=$(printf "%02d" "${BASH_REMATCH[3]}")
-                    
-                    local search_pattern="${show_name}-S${season_num}E${ep_num}"
-                    
-                    for ext in mkv mp4 avi; do
-                        found_file=$(find "$search_dir" -type f -iname "${search_pattern}*.${ext}" 2>/dev/null | head -n 1)
-                        if [[ -n "$found_file" ]]; then
-                            break
-                        fi
-                    done
-                fi
-            fi
+            done < <(find "$search_dir" -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" \) -print0)
             ;;
             
         music)
@@ -859,12 +874,13 @@ check_local_file() {
                     local track_num="${BASH_REMATCH[1]}"
                     local track_name="${BASH_REMATCH[2]}"
                     
-                    for ext in mp3 flac m4a; do
-                        found_file=$(find "$search_dir" -type f -iname "*${track_num}*${track_name}*.${ext}" 2>/dev/null | head -n 1)
-                        if [[ -n "$found_file" ]]; then
+                    # Use find with -printf to handle special characters
+                    while IFS= read -r -d $'\0' file; do
+                        if [[ "${file##*/}" =~ ${track_num} && "${file##*/}" =~ ${track_name} ]]; then
+                            found_file="$file"
                             break
                         fi
-                    done
+                    done < <(find "$search_dir" -type f \( -iname "*.mp3" -o -iname "*.flac" -o -iname "*.m4a" \) -print0)
                 fi
             fi
             ;;
