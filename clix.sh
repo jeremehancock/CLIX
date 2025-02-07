@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.2"
+VERSION="1.1.3"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -266,7 +266,7 @@ list_downloaded_movies() {
 
     while true; do
         local movies
-        movies=$(find "$MOVIES_DIR" -type f -exec basename {} \; | sort)
+        movies=$(find "$MOVIES_DIR" -type f -exec basename {} \; | sort -k2,2)
         
         local display_movies=""
         declare -A filename_map
@@ -278,7 +278,8 @@ list_downloaded_movies() {
         done <<< "$movies"
         
         local chosen_display
-        chosen_display=$(echo -e "$display_movies" | fzf --reverse --header="Select Downloaded Movie" --prompt="Search Downloaded Movies > ")
+        chosen_display=$(echo -e "$display_movies" | sed '/^$/d' | fzf --reverse --header="Select Downloaded Movie" --prompt="Search Downloaded Movies > ")
+
         
         if [[ -z "$chosen_display" ]]; then
             break
@@ -299,14 +300,18 @@ list_downloaded_shows() {
 
     while true; do
         local shows
-        shows=$(find "$SHOWS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+        shows=$(find "$SHOWS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -k2,2)
         
-        local chosen_show
-        chosen_show=$(echo "$shows" | fzf --reverse --header="Select Downloaded TV Show" --prompt="Search Downloaded TV Shows > ")
-        
-        if [[ -z "$chosen_show" ]]; then
+        # Replace underscores for display purposes only
+        local chosen_show_display
+        chosen_show_display=$(echo "$shows" | tr '_' ' ' | fzf --reverse --header="Select Downloaded TV Show" --prompt="Search Downloaded TV Shows > ")
+
+        if [[ -z "$chosen_show_display" ]]; then
             break
         fi
+
+        # Keep the original show name for directory checking
+        local chosen_show="${chosen_show_display// /_}"
 
         while true; do
             local seasons
@@ -323,7 +328,7 @@ list_downloaded_shows() {
             done <<< "$seasons"
 
             local chosen_season_display
-            chosen_season_display=$(echo -e "$formatted_seasons" | fzf --reverse --header="TV Show: $chosen_show
+            chosen_season_display=$(echo -e "$formatted_seasons" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
 Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
             
             if [[ -z "$chosen_season_display" ]]; then
@@ -359,7 +364,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 done <<< "$episodes"
 
                 local chosen_display
-                chosen_display=$(echo -e "$display_episodes" | fzf --reverse --header="TV Show: $chosen_show
+                chosen_display=$(echo -e "$display_episodes" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
 Season: $chosen_season_display
 Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 
@@ -368,7 +373,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 fi
 
                 local episode_file="${filename_map[$chosen_display]}"
-                local full_title="$chosen_show - $chosen_season_display - $chosen_display"
+                local full_title="$chosen_show_display - $chosen_season_display - $chosen_display"
                 
                 mpv --title="$full_title" "${SHOWS_DIR}/${chosen_show}/${chosen_season}/${episode_file}"
                 clear
@@ -376,6 +381,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
         done
     done
 }
+
 
 list_downloaded_music() {
     if [ ! -d "$MUSIC_DIR" ] || [ -z "$(ls -A "$MUSIC_DIR")" ]; then
@@ -396,7 +402,7 @@ list_downloaded_music() {
         done <<< "$artists"
         
         local chosen_artist_display
-        chosen_artist_display=$(echo -e "$display_artists" | fzf --reverse --header="Select Downloaded Artist" --prompt="Search Downloaded Artists > ")
+        chosen_artist_display=$(echo -e "$display_artists" | sed '/^$/d' | fzf --reverse --header="Select Downloaded Artist" --prompt="Search Downloaded Artists > ")
         
         if [[ -z "$chosen_artist_display" ]]; then
             break
@@ -422,7 +428,7 @@ list_downloaded_music() {
             done <<< "$albums"
 
             local chosen_album_display
-            chosen_album_display=$(echo -e "$display_albums" | fzf --reverse --header="Artist: $chosen_artist_display
+            chosen_album_display=$(echo -e "$display_albums" | sed '/^$/d' | fzf --reverse --header="Artist: $chosen_artist_display
 Select Downloaded Album" --prompt="Search Downloaded Albums > ")
             
             if [[ -z "$chosen_album_display" ]]; then
@@ -461,7 +467,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 done <<< "$tracks"
 
                 local chosen_track_display
-                chosen_track_display=$(echo -e "$display_tracks" | fzf --reverse --header="Artist: $chosen_artist_display
+                chosen_track_display=$(echo -e "$display_tracks" | sed '/^$/d' | fzf --reverse --header="Artist: $chosen_artist_display
 Album: $chosen_album_display
 Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
                 
