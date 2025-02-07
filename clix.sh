@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.4"
+VERSION="1.1.5"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -161,7 +161,7 @@ OPTIONS:
 
 NAVIGATION:
     ↑/↓		Move up/down in menus
-    Enter   Select current item
+    Enter	Select current item
     ESC     Go back to previous menu
     Ctrl+C  Exit the program or Exit from Music track
     Type to search  Fuzzy finding in any menu
