@@ -114,6 +114,7 @@ To find your Plex token, follow the instructions here: [Finding an authenticatio
 
 2. Library Selection
    - Select your library
+   - If there is only one library of the selected library type it will be auto selected
 
 3. Media Selection
    - Movies: Browse and select movie
