@@ -39,7 +39,7 @@ PLEX_TOKEN=""
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.0.7"
+VERSION="1.0.8"
 
 show_version() {
     echo "CLIX v${VERSION}"
@@ -325,41 +325,43 @@ get_library_contents() {
     first_response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1")
     total_size=$(echo "$first_response" | xmlstarlet sel -t -v "/MediaContainer/@totalSize" -n)
     
+    # Check if library is empty
+    if [[ "$total_size" -eq 0 ]]; then
+        # Instead of returning error, return special "EMPTY_LIBRARY" marker
+        echo "EMPTY_LIBRARY"
+        return 0
+    fi
+    
     # Determine item type from first response
     local first_item_type
     first_item_type=$(echo "$first_response" | xmlstarlet sel -t -m "//Video | //Directory" -v "name()" -n | head -n 1)
     if [[ -z "$first_item_type" ]]; then
-        echo "Error: No items found in library." >&2
-        return 1
+        echo "EMPTY_LIBRARY"
+        return 0
     fi
 
     # Redirect progress to stderr to keep stdout clean for piping
     {
-        # Clear terminal before starting
         clear >&2
-
         echo "Retrieving contents of library: $library_name" >&2
         echo "Total items: $total_size" >&2
     
         while true; do
-            # Use explicit arithmetic expansion
             local start_index=$((($page - 1) * $page_size))
             local response
             response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=${start_index}&X-Plex-Container-Size=${page_size}")
             if [[ -z "$response" ]]; then
-                echo "Error: No response from Plex server." >&2
-                return 1
+                echo "EMPTY_LIBRARY"
+                return 0
             fi
             local current_items
             if [[ "$first_item_type" == "Video" ]]; then
-                # Modified to put ID at the end for movies
                 current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n)
             elif [[ "$first_item_type" == "Directory" ]]; then
-                # Modified to put ID at the end for shows/artists
                 current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n)
             else
-                echo "Error: Could not determine media type." >&2
-                return 1
+                echo "EMPTY_LIBRARY"
+                return 0
             fi
             # If no items returned, we've reached the end
             if [[ -z "$current_items" ]]; then
@@ -376,7 +378,7 @@ get_library_contents() {
             # Progress percentage
             local progress_percent=$((current_count * 100 / total_size))
             
-            # Progress bar (crude but informative)
+            # Progress bar
             printf "\rRetrieving items: [%-50s] %d%% (%d/%d)" \
                 "$(printf "#%.0s" $(seq 1 $((progress_percent / 2))))" \
                 "$progress_percent" "$current_count" "$total_size" >&2
@@ -387,7 +389,6 @@ get_library_contents() {
             # Increment page
             ((page++))
         done
-        # New line and clear after progress bar
         echo "" >&2
         clear >&2
     }
@@ -524,33 +525,56 @@ select_media() {
                 return 1
             fi
 
+            # Count number of libraries
+            local lib_count
+            lib_count=$(echo "$libraries" | wc -l)
+
             while true; do
                 local chosen_library
-                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Movie Library" --prompt="Search Movie Libraries > ")
-                
-                if [[ -z "$chosen_library" ]]; then
-                    return 1
-                fi
-
                 local lib_key
-                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+
+                if [[ $lib_count -eq 1 ]]; then
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2)
+                    lib_key=$(echo "$libraries" | cut -d'|' -f1)
+                else
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Movie Library" --prompt="Search Movie Libraries > ")
+                    
+                    if [[ -z "$chosen_library" ]]; then
+                        return 1
+                    fi
+
+                    lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                fi
                 
                 while true; do
                     local movies
                     movies=$(get_library_contents "$lib_key")
                     
+                    if [[ "$movies" == "EMPTY_LIBRARY" ]]; then
+                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        clear
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
+                    fi
+                    
                     local chosen_movie
                     chosen_movie=$(echo "$movies" | cut -d'|' -f1 | fzf --reverse --header="Select Movie" --prompt="Search Movies > ")
                     
                     if [[ -z "$chosen_movie" ]]; then
-                        break  # Go back to library selection
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
                     fi
 
                     local movie_key
                     movie_key=$(echo "$movies" | grep "^${chosen_movie}|" | cut -d'|' -f2)
                     
                     play_media "$movie_key" "movie" "$chosen_movie"
-                    # Continue in movie selection after playback
                 done
             done
             ;;
@@ -564,26 +588,49 @@ select_media() {
                 return 1
             fi
 
+            local lib_count
+            lib_count=$(echo "$libraries" | wc -l)
+
             while true; do
                 local chosen_library
-                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select TV Show Library" --prompt="Search TV Show Libraries > ")
-                
-                if [[ -z "$chosen_library" ]]; then
-                    return 1
-                fi
-
                 local lib_key
-                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+
+                if [[ $lib_count -eq 1 ]]; then
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2)
+                    lib_key=$(echo "$libraries" | cut -d'|' -f1)
+                else
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select TV Show Library" --prompt="Search TV Show Libraries > ")
+                    
+                    if [[ -z "$chosen_library" ]]; then
+                        return 1
+                    fi
+
+                    lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                fi
                 
                 while true; do
                     local shows
                     shows=$(get_library_contents "$lib_key")
                     
+                    if [[ "$shows" == "EMPTY_LIBRARY" ]]; then
+                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        clear
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
+                    fi
+                    
                     local chosen_show
                     chosen_show=$(echo "$shows" | cut -d'|' -f1 | fzf --reverse --header="Select TV Show" --prompt="Search TV Shows > ")
                     
                     if [[ -z "$chosen_show" ]]; then
-                        break  # Go back to library selection
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
                     fi
 
                     local show_key
@@ -620,10 +667,8 @@ Select Episode" --prompt="Search Episodes > ")
                             local episode_key
                             episode_key=$(echo "$episodes" | grep "^${chosen_episode}|" | cut -d'|' -f2)
                             
-                            # Create a formatted title for the episode
                             local episode_title="$chosen_show - $chosen_season - $chosen_episode"
                             play_media "$episode_key" "episode" "$episode_title"
-                            # Continue in episode selection after playback
                         done
                     done
                 done
@@ -639,26 +684,49 @@ Select Episode" --prompt="Search Episodes > ")
                 return 1
             fi
 
+            local lib_count
+            lib_count=$(echo "$libraries" | wc -l)
+
             while true; do
                 local chosen_library
-                chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Music Library" --prompt="Search Music Libraries > ")
-                
-                if [[ -z "$chosen_library" ]]; then
-                    return 1
-                fi
-
                 local lib_key
-                lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+
+                if [[ $lib_count -eq 1 ]]; then
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2)
+                    lib_key=$(echo "$libraries" | cut -d'|' -f1)
+                else
+                    chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Music Library" --prompt="Search Music Libraries > ")
+                    
+                    if [[ -z "$chosen_library" ]]; then
+                        return 1
+                    fi
+
+                    lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
+                fi
                 
                 while true; do
                     local artists
                     artists=$(get_library_contents "$lib_key")
                     
+                    if [[ "$artists" == "EMPTY_LIBRARY" ]]; then
+                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        clear
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
+                    fi
+                    
                     local chosen_artist
                     chosen_artist=$(echo "$artists" | cut -d'|' -f1 | fzf --reverse --header="Select Artist" --prompt="Search Artists > ")
                     
                     if [[ -z "$chosen_artist" ]]; then
-                        break  # Go back to library selection
+                        if [[ $lib_count -eq 1 ]]; then
+                            return 1
+                        else
+                            break
+                        fi
                     fi
 
                     local artist_key
@@ -695,10 +763,8 @@ Select Track" --prompt="Search Tracks > ")
                             local track_key
                             track_key=$(echo "$tracks" | grep "^${chosen_track}|" | cut -d'|' -f2)
                             
-                            # Create a formatted title for the music track
                             local track_title="$chosen_artist - $chosen_album - $chosen_track"
                             play_media "$track_key" "music" "$track_title"
-                            # Continue in track selection after playback
                         done
                     done
                 done
