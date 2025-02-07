@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.3"
+VERSION="1.1.4"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -189,6 +189,8 @@ MENU STRUCTURE:
 
 DEPENDENCIES:
     Required: curl, xmlstarlet, fzf, mpv
+    
+Press q to return to main menu
 EOF
 }
 
@@ -910,12 +912,7 @@ handle_media() {
 
 display_help() {
     clear
-    show_help
-    echo -e "\nPress q to return to main menu..."
-    read -n 1 key
-    while [[ $key != "q" ]]; do
-        read -n 1 key
-    done
+    show_help | less -FX +Gg
     clear
 }
 
