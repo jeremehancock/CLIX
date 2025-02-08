@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.7"
+VERSION="1.1.8"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -511,7 +511,7 @@ get_libraries() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n
+    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n | sed 's/&amp;/\&/g'
 }
 
 get_library_contents() {
@@ -557,9 +557,9 @@ get_library_contents() {
             fi
             local current_items
             if [[ "$first_item_type" == "Video" ]]; then
-                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n)
+                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n | sed 's/&amp;/\&/g')
             elif [[ "$first_item_type" == "Directory" ]]; then
-                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n)
+                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g')
             else
                 echo "EMPTY_LIBRARY"
                 return 0
@@ -627,7 +627,7 @@ get_albums() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n
+    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
 }
 
 get_tracks() {
@@ -641,7 +641,7 @@ get_tracks() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
+    echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
 }
 
 get_seasons() {
@@ -656,7 +656,7 @@ get_seasons() {
     fi
     
     echo "$response" | xmlstarlet sel -t -m "//Directory[@type='season']" -v "@title" -o "|" -v "@ratingKey" -n | \
-    grep -v "^All episodes|" | sort -V
+    grep -v "^All episodes|" | sort -V | sed 's/&amp;/\&/g'
 }
 
 get_episodes() {
@@ -670,7 +670,7 @@ get_episodes() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
+    echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
 }
 
 play_media() {
@@ -738,27 +738,29 @@ download_media() {
             fi
             ;;
         episode)
-            local show_title season_num episode_num episode_title
-            show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
-            season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
-            episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
-            episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
+            local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
+            local season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
+            local episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
+            local episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
             
             season_num=$(printf "%02d" "$season_num")
             episode_num=$(printf "%02d" "$episode_num")
             
-            filename="${show_title}-S${season_num}E${episode_num}-${episode_title}${original_ext}"
+            local season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
+            
+            relative_path="${show_title}/${season_folder}"
+            filename="${show_title} - S${season_num}E${episode_num} - ${episode_title}${original_ext}"
             ;;
         music)
-            local artist album track_num track_title
-            artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
-            album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
-            track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
-            track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
+            local artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
+            local album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
+            local track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
+            local track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
             
             track_num=$(printf "%02d" "$track_num")
             
-            filename="${artist}-${album}-${track_num}-${track_title}${original_ext}"
+            relative_path="${artist}/${album}"
+            filename="${artist} - ${album} - ${track_num} - ${track_title}${original_ext}"
             ;;
         *)
             echo "Unsupported media type for download"
@@ -766,7 +768,9 @@ download_media() {
             ;;
     esac
     
-    filename=$(echo "$filename" | tr -d '\"' | tr ':' '-' | tr '/' '-' | tr '\\' '-')
+    # Replace &amp; with & in filenames and paths for downloads
+    filename=$(echo "$filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-' | tr '/' '-' | tr '\\' '-')
+    relative_path=$(echo "$relative_path" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-' | tr '/' '/' | tr '\\' '-')
     
     local target_dir
     case "$media_type" in
@@ -774,10 +778,10 @@ download_media() {
             target_dir="${MOVIES_DIR}"
             ;;
         episode)
-            target_dir="${SHOWS_DIR}/${additional_path}"
+            target_dir="${SHOWS_DIR}/${relative_path}"
             ;;
         music)
-            target_dir="${MUSIC_DIR}/${additional_path}"
+            target_dir="${MUSIC_DIR}/${relative_path}"
             ;;
     esac
     
@@ -811,55 +815,45 @@ check_local_file() {
     
     case "$media_type" in
         episode)
-            # Convert the provided path to handle both space and underscore formats
             local base_search_dir="${SHOWS_DIR}"
-            local show_dir=$(echo "$additional_path" | cut -d'/' -f1)
-            local season_dir=$(echo "$additional_path" | cut -d'/' -f2)
             
-            # Try both with spaces and underscores for show directory
-            local show_paths=("$show_dir" "${show_dir//_/ }")
+            # Extract show name and season from additional_path
+            # additional_path now contains exact Plex names with spaces
+            local show_dir="${additional_path%/*}"  # Get everything before last '/'
+            local season_dir="${additional_path##*/}" # Get everything after last '/'
             
-            # Try both formats for season directory
-            local season_paths=("$season_dir" "${season_dir//_/ }")
+            search_dir="${base_search_dir}/${show_dir}/${season_dir}"
             
-            # Extract season and episode numbers from the title
-            if [[ "$title" =~ [Ss]eason[[:space:]]([0-9]+)[[:space:]]-[[:space:]]([0-9]+)\. ]]; then
-                local season_num=$(printf "%02d" "${BASH_REMATCH[1]}")
-                local episode_num=$(printf "%02d" "${BASH_REMATCH[2]}")
-                
-                # Try all combinations
-                for show in "${show_paths[@]}"; do
-                    for season in "${season_paths[@]}"; do
-                        search_dir="${base_search_dir}/${show}/${season}"
-                        if [[ -d "$search_dir" ]]; then
-                            # Use find with -printf to handle special characters
-                            while IFS= read -r -d $'\0' file; do
-                                if [[ "$file" =~ S${season_num}E${episode_num} ]]; then
-                                    found_file="$file"
-                                    break 3
-                                fi
-                            done < <(find "$search_dir" -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" \) -print0)
+            if [[ -d "$search_dir" ]]; then
+                # Extract show name, season and episode numbers from the title
+                if [[ "$title" =~ ^(.+)[[:space:]]-[[:space:]]S([0-9]+)E([0-9]+)[[:space:]]-[[:space:]] ]]; then
+                    local show_name="${BASH_REMATCH[1]}"
+                    local season_num="${BASH_REMATCH[2]}"
+                    local episode_num="${BASH_REMATCH[3]}"
+                    
+                    while IFS= read -r -d $'\0' file; do
+                        local basename_file=$(basename "$file")
+                        if [[ "$basename_file" =~ ^${show_name}[[:space:]]-[[:space:]]S${season_num}E${episode_num}[[:space:]]-[[:space:]] ]]; then
+                            found_file="$file"
+                            break
                         fi
-                    done
-                done
+                    done < <(find "$search_dir" -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" \) -print0)
+                fi
             fi
             ;;
             
         movie)
             search_dir="${MOVIES_DIR}"
             
-            local clean_title
-            clean_title=$(echo "$title" | sed -E 's/[[:space:]]*\([0-9]{4}\)$//')
-            clean_title=$(echo "$clean_title" | tr -d '\"' | tr ':' '-' | tr '/' '-' | tr '\\' '-')
+            # For movies, the title should already be in Plex format
+            local clean_title="$title"
             
-            if [[ "$title" =~ \(([0-9]{4})\)$ ]]; then
-                local year="${BASH_REMATCH[1]}"
-                clean_title="${clean_title} (${year})"
-            fi
-            
-            # Use find with -printf to handle special characters
+            # Use find to locate the exact file name (preserving spaces)
             while IFS= read -r -d $'\0' file; do
-                if [[ "${file##*/}" =~ ^"${clean_title}"\.(mkv|mp4|avi)$ ]]; then
+                local basename_file=$(basename "$file")
+                local basename_no_ext="${basename_file%.*}"
+                
+                if [[ "$basename_no_ext" == "$clean_title" ]]; then
                     found_file="$file"
                     break
                 fi
@@ -870,13 +864,25 @@ check_local_file() {
             search_dir="${MUSIC_DIR}/${additional_path}"
             
             if [[ -d "$search_dir" ]]; then
+                # Extract track number from the title (format: "1. Track Name")
                 if [[ "$title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
-                    local track_num="${BASH_REMATCH[1]}"
+                    local track_num=$(printf "%02d" "${BASH_REMATCH[1]}")
                     local track_name="${BASH_REMATCH[2]}"
                     
-                    # Use find with -printf to handle special characters
+                    # Get artist and album from the additional_path
+                    local artist="${additional_path%/*}"  # Get everything before last '/'
+                    local album="${additional_path##*/}"  # Get everything after last '/'
+                    
+                    # Look for file with pattern: "Artist - Album - XX - Track Name"
                     while IFS= read -r -d $'\0' file; do
-                        if [[ "${file##*/}" =~ ${track_num} && "${file##*/}" =~ ${track_name} ]]; then
+                        local basename_file=$(basename "$file")
+                        # Escape special characters in artist, album, and track names
+                        local escaped_artist=$(echo "$artist" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        local escaped_album=$(echo "$album" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        local escaped_track_name=$(echo "$track_name" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        
+                        # Match the exact pattern: "Artist - Album - XX - Track Name.ext"
+                        if [[ "$basename_file" =~ ^${escaped_artist}[[:space:]]-[[:space:]]${escaped_album}[[:space:]]-[[:space:]]${track_num}[[:space:]]-[[:space:]]${escaped_track_name}\..+ ]]; then
                             found_file="$file"
                             break
                         fi
@@ -895,10 +901,50 @@ handle_media() {
     local title="$3"
     local additional_path="$4"
     
-    local local_file
-    local_file=$(check_local_file "$media_type" "$title" "$additional_path")
+    local response
+    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
     
-    local action_prompt="Select Action for: $title"
+    local formatted_title
+    local check_path
+    case "$media_type" in
+        music)
+            local artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
+            local album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
+            local track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
+            local track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
+            
+            # Keep the original Plex track format for display (e.g., "1. What's Up")
+            formatted_title="$title"
+            # Use exact artist and album names for path checking
+            check_path="${artist}/${album}"
+            ;;
+        episode)
+            local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
+            local season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
+            local episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
+            local episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
+            local season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
+            
+            season_num=$(printf "%02d" "$season_num")
+            episode_num=$(printf "%02d" "$episode_num")
+            
+            formatted_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
+            check_path="${show_title}/${season_folder}"
+            ;;
+        movie)
+            formatted_title="$title"  # Title should already be in Plex format
+            check_path=""
+            ;;
+        *)
+            echo "Unsupported media type"
+            return 1
+            ;;
+    esac
+    
+    local local_file
+    local_file=$(check_local_file "$media_type" "$formatted_title" "$check_path")
+    
+    local action_prompt="Select Action for: $formatted_title"
     local action_options="Play from Plex\nDownload"
     
     if [[ -n "$local_file" ]]; then
@@ -911,15 +957,15 @@ handle_media() {
     case "$action" in
         "Play Local File")
             if [[ -n "$local_file" ]]; then
-                mpv --title="$title" "$local_file"
+                mpv --title="$formatted_title" "$local_file"
                 clear
             fi
             ;;
         "Play from Plex")
-            play_media "$media_key" "$media_type" "$title"
+            play_media "$media_key" "$media_type" "$formatted_title"
             ;;
         "Download")
-            download_media "$media_key" "$media_type" "$title" "$additional_path"
+            download_media "$media_key" "$media_type" "$formatted_title" "$check_path"
             ;;
         *)
             return 0
