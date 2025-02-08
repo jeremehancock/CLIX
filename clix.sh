@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -263,7 +263,7 @@ check_plex_credentials() {
 
 list_downloaded_movies() {
     if [ ! -d "$MOVIES_DIR" ] || [ -z "$(ls -A "$MOVIES_DIR")" ]; then
-        echo -e "< Go back\n" | fzf --reverse --header="No downloaded movies found" --disabled
+        echo -e "< Go back" | fzf --reverse --header="No downloaded movies found" --disabled
         return
     fi
 
@@ -297,7 +297,7 @@ list_downloaded_movies() {
 
 list_downloaded_shows() {
     if [ ! -d "$SHOWS_DIR" ] || [ -z "$(ls -A "$SHOWS_DIR")" ]; then
-        echo -e "< Go back\n" | fzf --reverse --header="No downloaded TV shows found" --disabled
+        echo -e "< Go back" | fzf --reverse --header="No downloaded TV shows found" --disabled
         return
     fi
 
@@ -313,15 +313,12 @@ list_downloaded_shows() {
             break
         fi
 
-        # Keep the original show name for directory checking
-        local chosen_show="${chosen_show_display// /_}"
-
         while true; do
             local seasons
-            seasons=$(find "$SHOWS_DIR/$chosen_show" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
+            seasons=$(find "$SHOWS_DIR/$chosen_show_display" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
             
             if [[ -z "$seasons" ]]; then
-                echo -e "< Go back\n" | fzf --reverse --header="No seasons found" --disabled
+                echo -e "< Go back" | fzf --reverse --header="No seasons found" --disabled
                 break
             fi
 
@@ -338,14 +335,12 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 break
             fi
 
-            local chosen_season="${chosen_season_display/ /_}"
-
             while true; do
                 local episodes
-                episodes=$(find "$SHOWS_DIR/$chosen_show/$chosen_season" -type f -exec basename {} \; | sort -V)
+                episodes=$(find "$SHOWS_DIR/$chosen_show_display/$chosen_season_display" -type f -exec basename {} \; | sort -V)
                 
                 if [[ -z "$episodes" ]]; then
-                    echo -e "< Go back\n" | fzf --reverse --header="No episodes found" --disabled
+                    echo -e "< Go back" | fzf --reverse --header="No episodes found" --disabled
                     break
                 fi
 
@@ -378,7 +373,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 local episode_file="${filename_map[$chosen_display]}"
                 local full_title="$chosen_show_display - $chosen_season_display - $chosen_display"
                 
-                mpv --title="$full_title" "${SHOWS_DIR}/${chosen_show}/${chosen_season}/${episode_file}"
+                mpv --title="$full_title" "${SHOWS_DIR}/${chosen_show_display}/${chosen_season_display}/${episode_file}"
                 clear
             done
         done
@@ -388,7 +383,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
 
 list_downloaded_music() {
     if [ ! -d "$MUSIC_DIR" ] || [ -z "$(ls -A "$MUSIC_DIR")" ]; then
-        echo -e "< Go back\n" | fzf --reverse --header="No downloaded music found" --disabled
+        echo -e "< Go back" | fzf --reverse --header="No downloaded music found" --disabled
         return
     fi
 
@@ -418,7 +413,7 @@ list_downloaded_music() {
             albums=$(find "$MUSIC_DIR/$chosen_artist" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
             
             if [[ -z "$albums" ]]; then
-                echo -e "< Go back\n" | fzf --reverse --header="No albums found" --disabled
+                echo -e "< Go back" | fzf --reverse --header="No albums found" --disabled
                 break
             fi
 
@@ -445,7 +440,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 tracks=$(find "$MUSIC_DIR/$chosen_artist/$chosen_album" -type f -exec basename {} \; | sort -V)
                 
                 if [[ -z "$tracks" ]]; then
-                    echo -e "< Go back\n" | fzf --reverse --header="No tracks found" --disabled
+                    echo -e "< Go back" | fzf --reverse --header="No tracks found" --disabled
                     break
                 fi
 
@@ -1025,7 +1020,7 @@ select_media() {
                     movies=$(get_library_contents "$lib_key")
                     
                     if [[ "$movies" == "EMPTY_LIBRARY" ]]; then
-                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1087,7 +1082,7 @@ select_media() {
                     shows=$(get_library_contents "$lib_key")
                     
                     if [[ "$shows" == "EMPTY_LIBRARY" ]]; then
-                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1184,7 +1179,7 @@ Select Episode" --prompt="Search Episodes > ")
                     artists=$(get_library_contents "$lib_key")
                     
                     if [[ "$artists" == "EMPTY_LIBRARY" ]]; then
-                        echo -e "< Go back\n" | fzf --reverse --header="Library Empty" --disabled
+                        echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1292,6 +1287,8 @@ main() {
     check_dependencies
     check_plex_credentials
     create_download_dirs
+    
+    echo "" > log.txt
     
     while getopts "hvu" opt; do
         case ${opt} in
