@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.9"
+VERSION="1.2.0"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -961,15 +961,18 @@ handle_media() {
     
     case "$action" in
         "Play Local File")
+            clear
             if [[ -n "$local_file" ]]; then
                 mpv --title="$formatted_title" "$local_file"
                 clear
             fi
             ;;
         "Play from Plex")
+            clear
             play_media "$media_key" "$media_type" "$formatted_title"
             ;;
         "Download")
+            clear
             download_media "$media_key" "$media_type" "$formatted_title" "$check_path"
             ;;
         *)
