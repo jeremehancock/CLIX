@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.1.8"
+VERSION="1.1.9"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -809,7 +809,6 @@ check_local_file() {
     local media_type="$1"
     local title="$2"
     local additional_path="$3"
-    
     local search_dir
     local found_file=""
     
@@ -832,8 +831,10 @@ check_local_file() {
                     local episode_num="${BASH_REMATCH[3]}"
                     
                     while IFS= read -r -d $'\0' file; do
-                        local basename_file=$(basename "$file")
-                        if [[ "$basename_file" =~ ^${show_name}[[:space:]]-[[:space:]]S${season_num}E${episode_num}[[:space:]]-[[:space:]] ]]; then
+                       local basename_file=$(basename "$file")
+                        local basename_no_ext="${basename_file%.*}"
+
+                        if [[ "$basename_no_ext" == "$title" ]]; then
                             found_file="$file"
                             break
                         fi
@@ -928,8 +929,12 @@ handle_media() {
             season_num=$(printf "%02d" "$season_num")
             episode_num=$(printf "%02d" "$episode_num")
             
-            formatted_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
-            check_path="${show_title}/${season_folder}"
+			formatted_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
+			formatted_title=$(echo "$formatted_title" | sed 's/&amp;/\&/g')
+
+			check_path="${show_title}/${season_folder}"
+			check_path=$(echo "$check_path" | sed 's/&amp;/\&/g')
+			
             ;;
         movie)
             formatted_title="$title"  # Title should already be in Plex format
