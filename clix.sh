@@ -53,7 +53,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 # Version #
 ###########
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -348,14 +348,19 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 declare -A filename_map
                 
                 while IFS= read -r episode; do
-                    if [[ $episode =~ E([0-9]+)[-.](.+)\.[^.]+$ ]]; then
+                    # Extract episode number and title from filename
+                    # Pattern matches: The A-Team - S01E03 - Pros and Cons.mkv
+                    if [[ $episode =~ S[0-9]+E([0-9]+)[[:space:]]-[[:space:]](.+)\.[^.]+$ ]]; then
                         local ep_num="${BASH_REMATCH[1]}"
                         local ep_title="${BASH_REMATCH[2]}"
-                        ep_title=$(echo "$ep_title" | tr '-' ' ' | tr '_' ' ')
-                        local display_name="${ep_num#0}. ${ep_title}"
+                        # Remove leading zeros from episode number
+                        ep_num=$((10#$ep_num))
+                        # Create display format like "1. Episode Title"
+                        local display_name="${ep_num}. ${ep_title}"
                         display_episodes+="$display_name"$'\n'
                         filename_map["$display_name"]="$episode"
                     else
+                        # Fallback if filename doesn't match expected pattern
                         display_episodes+="$episode"$'\n'
                         filename_map["$episode"]="$episode"
                     fi
@@ -379,7 +384,6 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
         done
     done
 }
-
 
 list_downloaded_music() {
     if [ ! -d "$MUSIC_DIR" ] || [ -z "$(ls -A "$MUSIC_DIR")" ]; then
@@ -447,18 +451,20 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 local display_tracks=""
                 declare -A track_map
                 while IFS= read -r track; do
-                    local basename="${track%.*}"
-                    
-                    if [[ $basename =~ ([0-9]+)-(.+)$ ]]; then
+                    # Pattern matches: Artist - Album - XX - Track Title.ext
+                    if [[ $track =~ -[[:space:]]([0-9]+)[[:space:]]-[[:space:]](.+)\.[^.]+$ ]]; then
                         local track_num="${BASH_REMATCH[1]}"
                         local track_title="${BASH_REMATCH[2]}"
+                        # Remove leading zeros from track number
                         track_num=$((10#$track_num))
-                        track_title="${track_title//_/ }"
+                        # Create display format like "1. Track Title"
                         local display_name="${track_num}. ${track_title}"
                         display_tracks+="$display_name"$'\n'
                         track_map["$display_name"]="$track"
                     else
-                        local display_name="${basename//_/ }"
+                        # Fallback if filename doesn't match expected pattern
+                        local display_name="${track%.*}"
+                        display_name="${display_name//_/ }"
                         display_tracks+="$display_name"$'\n'
                         track_map["$display_name"]="$track"
                     fi
