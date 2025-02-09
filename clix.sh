@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.4"
+VERSION="1.2.5"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -75,7 +75,7 @@ check_version() {
         return 1
     fi
 
-    if [[ "$remote_version" != "$VERSION" ]]; then
+    if [[ "$remote_version" > "$VERSION" ]]; then
         echo -e "Update available: v$VERSION → v$remote_version"
         echo -e "Use the Update option in the main menu or run with -u to update to the latest version"
         return 0
