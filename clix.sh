@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.5"
+VERSION="1.2.6"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -145,21 +145,37 @@ update_script() {
     fi
 }
 
+display_help() {
+    # Disable terminal echoing to prevent screen clearing
+    stty -echo
+    
+    # Clear the screen and display help
+    clear
+    show_help | less -R
+
+    # Re-enable terminal echoing
+    stty echo
+    
+    # Clear screen after help
+    clear
+}
+
+# The show_help function remains the same as it was originally in the script
 show_help() {
     cat << EOF
 CLIX v${VERSION} - Guide
 
 OPTIONS:
-    -h		Show this help message
-    -v		Show version information
-    -u		Update to the latest version
+    -h          Show this help message
+    -v          Show version information
+    -u          Update to the latest version
 
 NAVIGATION:
-    ↑/↓			Move up/down in menus
-    Enter		Select current item
-    ESC			Go back to previous menu
-    Ctrl+C		Exit the program or Exit from Music track
-    Type to search	Fuzzy finding in any menu
+    ↑/↓         Move up/down in menus
+    Enter       Select current item
+    ESC         Go back to previous menu
+    Ctrl+C      Exit the program or Exit from Music track
+    Type to search   Fuzzy finding in any menu
 
 MENU STRUCTURE:
     1. Main Menu
@@ -184,7 +200,7 @@ MENU STRUCTURE:
 
 DEPENDENCIES:
     Required: curl, xmlstarlet, fzf, mpv
-    
+
 Press q to return to main menu
 
 EOF
@@ -1050,12 +1066,6 @@ handle_media() {
             return 0
             ;;
     esac
-}
-
-display_help() {
-    clear
-    show_help | less -FX +Gg
-    clear
 }
 
 select_media() {
