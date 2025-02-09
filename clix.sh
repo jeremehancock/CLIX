@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.6"
+VERSION="1.2.7"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -419,7 +419,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 fi
 
                 local episode_file="${filename_map[$chosen_display]}"
-                mpv --title="$chosen_display" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
+                mpv --title="$chosen_show_display - $chosen_season_display - $chosen_display" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
                 clear
             done
         done
