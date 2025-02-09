@@ -35,10 +35,6 @@
 PLEX_URL="http://localhost:32400"
 PLEX_TOKEN=""
 
-########################################################################################################
-################################### DO NOT EDIT ANYTHING BELOW #########################################
-########################################################################################################
-
 ######################
 # Directory Settings #
 ######################
@@ -48,12 +44,11 @@ MOVIES_DIR="${DOWNLOAD_BASE_DIR}/movies"
 SHOWS_DIR="${DOWNLOAD_BASE_DIR}/shows"
 MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 
+########################################################################################################
+################################### DO NOT EDIT ANYTHING BELOW #########################################
+########################################################################################################
 
-###########
-# Version #
-###########
-
-VERSION="1.2.2"
+VERSION="1.2.3"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -261,6 +256,20 @@ check_plex_credentials() {
     sleep 2
 }
 
+downloads_menu() {
+    while true; do
+        local choice
+        choice=$(echo -e "Movies\nTV Shows\nMusic" | fzf --reverse --header="Downloads Menu" --prompt="Search Downloads > ")
+        
+        case "$choice" in
+            Movies) list_downloaded_movies ;;
+            "TV Shows") list_downloaded_shows ;;
+            Music) list_downloaded_music ;;
+            "") break ;;
+        esac
+    done
+}
+
 list_downloaded_movies() {
     if [ ! -d "$MOVIES_DIR" ] || [ -z "$(ls -A "$MOVIES_DIR")" ]; then
         echo -e "< Go back" | fzf --reverse --header="No downloaded movies found" --disabled
@@ -276,13 +285,14 @@ list_downloaded_movies() {
         
         while IFS= read -r movie; do
             local display_name="${movie%.*}"
+            # Convert asterisks back to slashes for display
+            display_name=$(echo "$display_name" | tr '*' '/')
             display_movies+="$display_name"$'\n'
             filename_map["$display_name"]="$movie"
         done <<< "$movies"
         
         local chosen_display
         chosen_display=$(echo -e "$display_movies" | sed '/^$/d' | fzf --reverse --header="Select Downloaded Movie" --prompt="Search Downloaded Movies > ")
-
         
         if [[ -z "$chosen_display" ]]; then
             break
@@ -305,39 +315,55 @@ list_downloaded_shows() {
         local shows
         shows=$(find "$SHOWS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -k2,2)
         
-        # Replace underscores for display purposes only
+        # Convert asterisks to slashes for display
+        local display_shows=""
+        declare -A show_map
+        
+        while IFS= read -r show; do
+            local display_name=$(echo "$show" | tr '*' '/')
+            display_shows+="$display_name"$'\n'
+            show_map["$display_name"]="$show"
+        done <<< "$shows"
+        
         local chosen_show_display
-        chosen_show_display=$(echo "$shows" | tr '_' ' ' | fzf --reverse --header="Select Downloaded TV Show" --prompt="Search Downloaded TV Shows > ")
+        chosen_show_display=$(echo -e "$display_shows" | sed '/^$/d' | fzf --reverse --header="Select Downloaded TV Show" --prompt="Search Downloaded TV Shows > ")
 
         if [[ -z "$chosen_show_display" ]]; then
             break
         fi
 
+        local original_show="${show_map[$chosen_show_display]}"
+
         while true; do
             local seasons
-            seasons=$(find "$SHOWS_DIR/$chosen_show_display" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
+            seasons=$(find "$SHOWS_DIR/$original_show" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
             
             if [[ -z "$seasons" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No seasons found" --disabled
                 break
             fi
 
-            local formatted_seasons=""
+            local display_seasons=""
+            declare -A season_map
             while IFS= read -r season; do
-                formatted_seasons+="${season/_/ }"$'\n'
+                local display_name=$(echo "$season" | tr '*' '/')
+                display_seasons+="$display_name"$'\n'
+                season_map["$display_name"]="$season"
             done <<< "$seasons"
 
             local chosen_season_display
-            chosen_season_display=$(echo -e "$formatted_seasons" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
+            chosen_season_display=$(echo -e "$display_seasons" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
 Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
             
             if [[ -z "$chosen_season_display" ]]; then
                 break
             fi
 
+            local original_season="${season_map[$chosen_season_display]}"
+
             while true; do
                 local episodes
-                episodes=$(find "$SHOWS_DIR/$chosen_show_display/$chosen_season_display" -type f -exec basename {} \; | sort -V)
+                episodes=$(find "$SHOWS_DIR/$original_show/$original_season" -type f -exec basename {} \; | sort -V)
                 
                 if [[ -z "$episodes" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No episodes found" --disabled
@@ -348,21 +374,22 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 declare -A filename_map
                 
                 while IFS= read -r episode; do
-                    # Extract episode number and title from filename
-                    # Pattern matches: The A-Team - S01E03 - Pros and Cons.mkv
-                    if [[ $episode =~ S[0-9]+E([0-9]+)[[:space:]]-[[:space:]](.+)\.[^.]+$ ]]; then
+                    local base_name="${episode%.*}"
+                    # Extract episode number and title
+                    if [[ $base_name =~ S[0-9]+E([0-9]+)[[:space:]]-[[:space:]](.+)$ ]]; then
                         local ep_num="${BASH_REMATCH[1]}"
                         local ep_title="${BASH_REMATCH[2]}"
                         # Remove leading zeros from episode number
                         ep_num=$((10#$ep_num))
-                        # Create display format like "1. Episode Title"
+                        # Create simple display format
                         local display_name="${ep_num}. ${ep_title}"
                         display_episodes+="$display_name"$'\n'
                         filename_map["$display_name"]="$episode"
                     else
-                        # Fallback if filename doesn't match expected pattern
-                        display_episodes+="$episode"$'\n'
-                        filename_map["$episode"]="$episode"
+                        # Fallback to full name if pattern doesn't match
+                        local display_name=$(echo "$base_name" | tr '*' '/')
+                        display_episodes+="$display_name"$'\n'
+                        filename_map["$display_name"]="$episode"
                     fi
                 done <<< "$episodes"
 
@@ -376,9 +403,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 fi
 
                 local episode_file="${filename_map[$chosen_display]}"
-                local full_title="$chosen_show_display - $chosen_season_display - $chosen_display"
-                
-                mpv --title="$full_title" "${SHOWS_DIR}/${chosen_show_display}/${chosen_season_display}/${episode_file}"
+                mpv --title="$chosen_display" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
                 clear
             done
         done
@@ -398,7 +423,8 @@ list_downloaded_music() {
         local display_artists=""
         declare -A artist_map
         while IFS= read -r artist; do
-            local display_name="${artist//_/ }"
+            # Convert asterisks to slashes for display
+            local display_name=$(echo "$artist" | tr '*' '/')
             display_artists+="$display_name"$'\n'
             artist_map["$display_name"]="$artist"
         done <<< "$artists"
@@ -410,11 +436,11 @@ list_downloaded_music() {
             break
         fi
 
-        local chosen_artist="${artist_map[$chosen_artist_display]}"
+        local original_artist="${artist_map[$chosen_artist_display]}"
 
         while true; do
             local albums
-            albums=$(find "$MUSIC_DIR/$chosen_artist" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+            albums=$(find "$MUSIC_DIR/$original_artist" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
             
             if [[ -z "$albums" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No albums found" --disabled
@@ -424,7 +450,8 @@ list_downloaded_music() {
             local display_albums=""
             declare -A album_map
             while IFS= read -r album; do
-                local display_name="${album//_/ }"
+                # Convert asterisks to slashes for display
+                local display_name=$(echo "$album" | tr '*' '/')
                 display_albums+="$display_name"$'\n'
                 album_map["$display_name"]="$album"
             done <<< "$albums"
@@ -437,11 +464,11 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 break
             fi
 
-            local chosen_album="${album_map[$chosen_album_display]}"
+            local original_album="${album_map[$chosen_album_display]}"
 
             while true; do
                 local tracks
-                tracks=$(find "$MUSIC_DIR/$chosen_artist/$chosen_album" -type f -exec basename {} \; | sort -V)
+                tracks=$(find "$MUSIC_DIR/$original_artist/$original_album" -type f -exec basename {} \; | sort -V)
                 
                 if [[ -z "$tracks" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No tracks found" --disabled
@@ -451,20 +478,20 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 local display_tracks=""
                 declare -A track_map
                 while IFS= read -r track; do
-                    # Pattern matches: Artist - Album - XX - Track Title.ext
-                    if [[ $track =~ -[[:space:]]([0-9]+)[[:space:]]-[[:space:]](.+)\.[^.]+$ ]]; then
+                    local base_name="${track%.*}"
+                    # Extract track number and title
+                    if [[ $base_name =~ -[[:space:]]([0-9]+)[[:space:]]-[[:space:]](.+)$ ]]; then
                         local track_num="${BASH_REMATCH[1]}"
                         local track_title="${BASH_REMATCH[2]}"
                         # Remove leading zeros from track number
                         track_num=$((10#$track_num))
-                        # Create display format like "1. Track Title"
+                        # Create simple display format
                         local display_name="${track_num}. ${track_title}"
                         display_tracks+="$display_name"$'\n'
                         track_map["$display_name"]="$track"
                     else
-                        # Fallback if filename doesn't match expected pattern
-                        local display_name="${track%.*}"
-                        display_name="${display_name//_/ }"
+                        # Fallback to full name if pattern doesn't match
+                        local display_name=$(echo "$base_name" | tr '*' '/')
                         display_tracks+="$display_name"$'\n'
                         track_map["$display_name"]="$track"
                     fi
@@ -480,26 +507,10 @@ Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
                 fi
 
                 local track_file="${track_map[$chosen_track_display]}"
-                local full_title="$chosen_artist_display - $chosen_album_display - $chosen_track_display"
-                
-                mpv --title="$full_title" "${MUSIC_DIR}/${chosen_artist}/${chosen_album}/${track_file}"
+                mpv --title="$chosen_track_display" "${MUSIC_DIR}/${original_artist}/${original_album}/${track_file}"
                 clear
             done
         done
-    done
-}
-
-downloads_menu() {
-    while true; do
-        local choice
-        choice=$(echo -e "Movies\nTV Shows\nMusic" | fzf --reverse --header="Downloads Menu" --prompt="Search Downloads > ")
-        
-        case "$choice" in
-            Movies) list_downloaded_movies ;;
-            "TV Shows") list_downloaded_shows ;;
-            Music) list_downloaded_music ;;
-            "") break ;;
-        esac
     done
 }
 
@@ -724,7 +735,9 @@ download_media() {
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
     
-    local filename
+    local display_filename
+    local safe_filename
+    local relative_path
     case "$media_type" in
         movie)
             local clean_title
@@ -732,11 +745,16 @@ download_media() {
             
             local year
             year=$(echo "$response" | xmlstarlet sel -t -v "//Video/@year" 2>/dev/null)
+            
+            # Keep original title for display
             if [[ -n "$year" ]]; then
-                filename="${clean_title} (${year})${original_ext}"
+                display_filename="${clean_title} (${year})${original_ext}"
             else
-                filename="${clean_title}${original_ext}"
+                display_filename="${clean_title}${original_ext}"
             fi
+            
+            # Create safe version for filesystem
+            safe_filename=$(echo "$display_filename" | tr '/' '*')
             ;;
         episode)
             local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
@@ -749,8 +767,16 @@ download_media() {
             
             local season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
             
-            relative_path="${show_title}/${season_folder}"
-            filename="${show_title} - S${season_num}E${episode_num} - ${episode_title}${original_ext}"
+            # Create display versions with slashes
+            display_filename="${show_title} - S${season_num}E${episode_num} - ${episode_title}${original_ext}"
+            
+            # Create safe versions with asterisks for filesystem
+            local show_title_safe=$(echo "$show_title" | tr '/' '*')
+            local season_folder_safe=$(echo "$season_folder" | tr '/' '*')
+            local episode_title_safe=$(echo "$episode_title" | tr '/' '*')
+            
+            relative_path="${show_title_safe}/${season_folder_safe}"
+            safe_filename="${show_title_safe} - S${season_num}E${episode_num} - ${episode_title_safe}${original_ext}"
             ;;
         music)
             local artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
@@ -760,8 +786,16 @@ download_media() {
             
             track_num=$(printf "%02d" "$track_num")
             
-            relative_path="${artist}/${album}"
-            filename="${artist} - ${album} - ${track_num} - ${track_title}${original_ext}"
+            # Create display version with slashes
+            display_filename="${artist} - ${album} - ${track_num} - ${track_title}${original_ext}"
+            
+            # Create safe versions with asterisks for filesystem
+            local artist_safe=$(echo "$artist" | tr '/' '*')
+            local album_safe=$(echo "$album" | tr '/' '*')
+            local track_title_safe=$(echo "$track_title" | tr '/' '*')
+            
+            relative_path="${artist_safe}/${album_safe}"
+            safe_filename="${artist_safe} - ${album_safe} - ${track_num} - ${track_title_safe}${original_ext}"
             ;;
         *)
             echo "Unsupported media type for download"
@@ -770,8 +804,9 @@ download_media() {
     esac
     
     # Replace &amp; with & in filenames and paths for downloads
-    filename=$(echo "$filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-' | tr '/' '-' | tr '\\' '-')
-    relative_path=$(echo "$relative_path" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-' | tr '/' '/' | tr '\\' '-')
+    display_filename=$(echo "$display_filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
+    safe_filename=$(echo "$safe_filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
+    [[ -n "$relative_path" ]] && relative_path=$(echo "$relative_path" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
     
     local target_dir
     case "$media_type" in
@@ -788,14 +823,13 @@ download_media() {
     
     mkdir -p "$target_dir"
     
-    echo "Downloading: ${title}"
-    echo "Filename: ${filename}"
-    echo "Destination: ${target_dir}/${filename}"
+    echo "Downloading: ${display_filename}"
+    echo "Destination: ${target_dir}/${safe_filename}"
     
     if curl -# -L \
         -H "X-Plex-Token: $PLEX_TOKEN" \
         --progress-bar \
-        -o "${target_dir}/${filename}" \
+        -o "${target_dir}/${safe_filename}" \
         "$media_url"; then
         echo "Download completed successfully!"
     else
@@ -817,25 +851,30 @@ check_local_file() {
         episode)
             local base_search_dir="${SHOWS_DIR}"
             
-            # Extract show name and season from additional_path
-            # additional_path now contains exact Plex names with spaces
-            local show_dir="${additional_path%/*}"  # Get everything before last '/'
-            local season_dir="${additional_path##*/}" # Get everything after last '/'
+            # Replace forward slashes with asterisks in the path components
+            local processed_path=""
+            IFS='/' read -ra path_parts <<< "$additional_path"
+            for part in "${path_parts[@]}"; do
+                local processed_part=$(echo "$part" | tr '/' '*' | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
+                if [ -z "$processed_path" ]; then
+                    processed_path="$processed_part"
+                else
+                    processed_path="$processed_path/$processed_part"
+                fi
+            done
             
-            search_dir="${base_search_dir}/${show_dir}/${season_dir}"
+            search_dir="${base_search_dir}/${processed_path}"
+            
+            # Convert title to use asterisks for filesystem matching
+            local safe_title=$(echo "$title" | tr '/' '*')
             
             if [[ -d "$search_dir" ]]; then
-                # Extract show name, season and episode numbers from the title
-                if [[ "$title" =~ ^(.+)[[:space:]]-[[:space:]]S([0-9]+)E([0-9]+)[[:space:]]-[[:space:]] ]]; then
-                    local show_name="${BASH_REMATCH[1]}"
-                    local season_num="${BASH_REMATCH[2]}"
-                    local episode_num="${BASH_REMATCH[3]}"
-                    
+                if [[ "$safe_title" =~ ^(.+)[[:space:]]-[[:space:]]S([0-9]+)E([0-9]+)[[:space:]]-[[:space:]] ]]; then
                     while IFS= read -r -d $'\0' file; do
-                       local basename_file=$(basename "$file")
+                        local basename_file=$(basename "$file")
                         local basename_no_ext="${basename_file%.*}"
 
-                        if [[ "$basename_no_ext" == "$title" ]]; then
+                        if [[ "$basename_no_ext" == "$safe_title" ]]; then
                             found_file="$file"
                             break
                         fi
@@ -846,16 +885,13 @@ check_local_file() {
             
         movie)
             search_dir="${MOVIES_DIR}"
+            local safe_title=$(echo "$title" | tr '/' '*')
             
-            # For movies, the title should already be in Plex format
-            local clean_title="$title"
-            
-            # Use find to locate the exact file name (preserving spaces)
             while IFS= read -r -d $'\0' file; do
                 local basename_file=$(basename "$file")
                 local basename_no_ext="${basename_file%.*}"
                 
-                if [[ "$basename_no_ext" == "$clean_title" ]]; then
+                if [[ "$basename_no_ext" == "$safe_title" ]]; then
                     found_file="$file"
                     break
                 fi
@@ -863,27 +899,38 @@ check_local_file() {
             ;;
             
         music)
-            search_dir="${MUSIC_DIR}/${additional_path}"
+            local base_search_dir="${MUSIC_DIR}"
+            
+            # Replace forward slashes with asterisks in the path components
+            local processed_path=""
+            IFS='/' read -ra path_parts <<< "$additional_path"
+            for part in "${path_parts[@]}"; do
+                local processed_part=$(echo "$part" | tr '/' '*' | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
+                if [ -z "$processed_path" ]; then
+                    processed_path="$processed_part"
+                else
+                    processed_path="$processed_path/$processed_part"
+                fi
+            done
+            
+            search_dir="${base_search_dir}/${processed_path}"
             
             if [[ -d "$search_dir" ]]; then
-                # Extract track number from the title (format: "1. Track Name")
                 if [[ "$title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
                     local track_num=$(printf "%02d" "${BASH_REMATCH[1]}")
                     local track_name="${BASH_REMATCH[2]}"
                     
-                    # Get artist and album from the additional_path
-                    local artist="${additional_path%/*}"  # Get everything before last '/'
-                    local album="${additional_path##*/}"  # Get everything after last '/'
+                    # Use the safe versions for filesystem operations
+                    local artist_safe=$(echo "${path_parts[0]}" | tr '/' '*')
+                    local album_safe=$(echo "${path_parts[1]}" | tr '/' '*')
+                    local track_name_safe=$(echo "$track_name" | tr '/' '*')
                     
-                    # Look for file with pattern: "Artist - Album - XX - Track Name"
                     while IFS= read -r -d $'\0' file; do
                         local basename_file=$(basename "$file")
-                        # Escape special characters in artist, album, and track names
-                        local escaped_artist=$(echo "$artist" | sed 's/[.[\*^$()+?{|]/\\&/g')
-                        local escaped_album=$(echo "$album" | sed 's/[.[\*^$()+?{|]/\\&/g')
-                        local escaped_track_name=$(echo "$track_name" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        local escaped_artist=$(echo "$artist_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        local escaped_album=$(echo "$album_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        local escaped_track_name=$(echo "$track_name_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
                         
-                        # Match the exact pattern: "Artist - Album - XX - Track Name.ext"
                         if [[ "$basename_file" =~ ^${escaped_artist}[[:space:]]-[[:space:]]${escaped_album}[[:space:]]-[[:space:]]${track_num}[[:space:]]-[[:space:]]${escaped_track_name}\..+ ]]; then
                             found_file="$file"
                             break
@@ -906,6 +953,7 @@ handle_media() {
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
     
+    local display_title
     local formatted_title
     local check_path
     case "$media_type" in
@@ -915,10 +963,21 @@ handle_media() {
             local track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
             local track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
             
-            # Keep the original Plex track format for display (e.g., "1. What's Up")
+            # Convert artist and album names to use asterisks for filesystem operations
+            local artist_safe=$(echo "$artist" | tr '/' '*')
+            local album_safe=$(echo "$album" | tr '/' '*')
+            
+            # Keep original names for display
+            display_title="$title"
+            # Use safe versions for filesystem operations
             formatted_title="$title"
-            # Use exact artist and album names for path checking
-            check_path="${artist}/${album}"
+            if [[ "$formatted_title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
+                local track_num="${BASH_REMATCH[1]}"
+                local track_name="${BASH_REMATCH[2]}"
+                formatted_title="${track_num}. ${track_name}"
+            fi
+            formatted_title=$(echo "$formatted_title" | tr '/' '*')
+            check_path="${artist_safe}/${album_safe}"
             ;;
         episode)
             local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
@@ -930,15 +989,26 @@ handle_media() {
             season_num=$(printf "%02d" "$season_num")
             episode_num=$(printf "%02d" "$episode_num")
             
-			formatted_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
-			formatted_title=$(echo "$formatted_title" | sed 's/&amp;/\&/g')
+            # Keep original name for display
+            display_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
+            display_title=$(echo "$display_title" | sed 's/&amp;/\&/g')
 
-			check_path="${show_title}/${season_folder}"
-			check_path=$(echo "$check_path" | sed 's/&amp;/\&/g')
-			
+            # Create safe versions for filesystem
+            local show_title_safe=$(echo "$show_title" | tr '/' '*')
+            local season_folder_safe=$(echo "$season_folder" | tr '/' '*')
+            local episode_title_safe=$(echo "$episode_title" | tr '/' '*')
+            
+            formatted_title="${show_title_safe} - S${season_num}E${episode_num} - ${episode_title_safe}"
+            formatted_title=$(echo "$formatted_title" | sed 's/&amp;/\&/g')
+
+            check_path="${show_title_safe}/${season_folder_safe}"
+            check_path=$(echo "$check_path" | sed 's/&amp;/\&/g')
             ;;
         movie)
-            formatted_title="$title"  # Title should already be in Plex format
+            # Keep original name for display
+            display_title="$title"
+            # Create safe version for filesystem
+            formatted_title=$(echo "$title" | tr '/' '*')
             check_path=""
             ;;
         *)
@@ -950,7 +1020,7 @@ handle_media() {
     local local_file
     local_file=$(check_local_file "$media_type" "$formatted_title" "$check_path")
     
-    local action_prompt="Select Action for: $formatted_title"
+    local action_prompt="Select Action for: $display_title"
     local action_options="Play from Plex\nDownload"
     
     if [[ -n "$local_file" ]]; then
@@ -964,17 +1034,17 @@ handle_media() {
         "Play Local File")
             clear
             if [[ -n "$local_file" ]]; then
-                mpv --title="$formatted_title" "$local_file"
+                mpv --title="$display_title" "$local_file"
                 clear
             fi
             ;;
         "Play from Plex")
             clear
-            play_media "$media_key" "$media_type" "$formatted_title"
+            play_media "$media_key" "$media_type" "$display_title"
             ;;
         "Download")
             clear
-            download_media "$media_key" "$media_type" "$formatted_title" "$check_path"
+            download_media "$media_key" "$media_type" "$display_title" "$check_path"
             ;;
         *)
             return 0
