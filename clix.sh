@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.7"
+VERSION="1.2.8"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -419,7 +419,16 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
                 fi
 
                 local episode_file="${filename_map[$chosen_display]}"
-                mpv --title="$chosen_show_display - $chosen_season_display - $chosen_display" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
+                # Extract episode number and title from filename
+                if [[ $episode_file =~ S([0-9]{2})E([0-9]{2})[[:space:]]-[[:space:]](.+)\..+ ]]; then
+                    local season_num="${BASH_REMATCH[1]}"
+                    local episode_num="${BASH_REMATCH[2]}"
+                    local episode_title="${BASH_REMATCH[3]}"
+                    local display_title="${chosen_show_display} - S${season_num}E${episode_num} - ${episode_title}"
+                    mpv --title="$display_title" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
+                else
+                    mpv --title="$chosen_show_display - $chosen_season_display - $chosen_display" "${SHOWS_DIR}/${original_show}/${original_season}/${episode_file}"
+                fi
                 clear
             done
         done
@@ -523,7 +532,7 @@ Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
                 fi
 
                 local track_file="${track_map[$chosen_track_display]}"
-                mpv --title="$chosen_track_display" "${MUSIC_DIR}/${original_artist}/${original_album}/${track_file}"
+                mpv --title="$chosen_artist_display - $chosen_album_display - $chosen_track_display" "${MUSIC_DIR}/${original_artist}/${original_album}/${track_file}"
                 clear
             done
         done
@@ -984,7 +993,7 @@ handle_media() {
             local album_safe=$(echo "$album" | tr '/' '*')
             
             # Keep original names for display
-            display_title="$title"
+            display_title="$artist - $album - $title"
             # Use safe versions for filesystem operations
             formatted_title="$title"
             if [[ "$formatted_title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
