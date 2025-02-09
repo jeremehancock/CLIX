@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.3"
+VERSION="1.2.4"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -1363,8 +1363,6 @@ main() {
     check_dependencies
     check_plex_credentials
     create_download_dirs
-    
-    echo "" > log.txt
     
     while getopts "hvu" opt; do
         case ${opt} in
