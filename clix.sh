@@ -48,7 +48,7 @@ MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.2.8"
+VERSION="1.2.9"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -289,6 +289,7 @@ downloads_menu() {
 list_downloaded_movies() {
     if [ ! -d "$MOVIES_DIR" ] || [ -z "$(ls -A "$MOVIES_DIR")" ]; then
         echo -e "< Go back" | fzf --reverse --header="No downloaded movies found" --disabled
+        clear
         return
     fi
 
@@ -324,6 +325,7 @@ list_downloaded_movies() {
 list_downloaded_shows() {
     if [ ! -d "$SHOWS_DIR" ] || [ -z "$(ls -A "$SHOWS_DIR")" ]; then
         echo -e "< Go back" | fzf --reverse --header="No downloaded TV shows found" --disabled
+        clear
         return
     fi
 
@@ -356,6 +358,7 @@ list_downloaded_shows() {
             
             if [[ -z "$seasons" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No seasons found" --disabled
+                clear
                 break
             fi
 
@@ -383,6 +386,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 
                 if [[ -z "$episodes" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No episodes found" --disabled
+                    clear
                     break
                 fi
 
@@ -438,6 +442,7 @@ Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
 list_downloaded_music() {
     if [ ! -d "$MUSIC_DIR" ] || [ -z "$(ls -A "$MUSIC_DIR")" ]; then
         echo -e "< Go back" | fzf --reverse --header="No downloaded music found" --disabled
+        clear
         return
     fi
 
@@ -469,6 +474,7 @@ list_downloaded_music() {
             
             if [[ -z "$albums" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No albums found" --disabled
+                clear
                 break
             fi
 
@@ -497,6 +503,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 
                 if [[ -z "$tracks" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No tracks found" --disabled
+                    clear
                     break
                 fi
 
