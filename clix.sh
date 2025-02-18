@@ -43,6 +43,7 @@ DOWNLOAD_BASE_DIR="downloads"
 MOVIES_DIR="${DOWNLOAD_BASE_DIR}/movies"
 SHOWS_DIR="${DOWNLOAD_BASE_DIR}/shows"
 MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
+CACHE_DIR="/tmp/clix_cache"
 
 ########################################################################################################
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
@@ -54,6 +55,44 @@ create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
     mkdir -p "${SHOWS_DIR}"
     mkdir -p "${MUSIC_DIR}"
+    mkdir -p "${CACHE_DIR}"
+}
+
+clear_cache() {
+    rm -rf "${CACHE_DIR}"/*
+}
+
+get_cache_key() {
+    local function_name="$1"
+    shift
+    local params="$*"
+    echo "${function_name}_${params}" | md5sum | cut -d' ' -f1
+}
+
+cache_get() {
+    local cache_key="$1"
+    local cache_file="${CACHE_DIR}/${cache_key}"
+    
+    if [[ -f "$cache_file" ]]; then
+        local cache_time
+        cache_time=$(stat -c %Y "$cache_file")
+        local current_time
+        current_time=$(date +%s)
+        local age=$((current_time - cache_time))
+        
+        # Cache expires after 1 hour
+        if [[ $age -lt 3600 ]]; then
+            cat "$cache_file"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+cache_set() {
+    local cache_key="$1"
+    local cache_file="${CACHE_DIR}/${cache_key}"
+    cat > "$cache_file"
 }
 
 show_version() {
@@ -76,6 +115,7 @@ check_version() {
     fi
 
     if [[ "$remote_version" > "$VERSION" ]]; then
+        clear_cache
         echo -e "Update available: v$VERSION → v$remote_version"
         echo -e "Use the Update option in the main menu or run with -u to update to the latest version"
         return 0
@@ -118,6 +158,7 @@ update_script() {
     fi
     
     if curl -o "$script_name" -L https://raw.githubusercontent.com/jeremehancock/CLIX/main/clix.sh; then
+        clear_cache
         local last_backup=$(ls -t "$backup_dir"/*.backup | head -n 1)
         
         if [[ -n "$last_backup" ]]; then
@@ -207,7 +248,7 @@ EOF
 }
 
 check_dependencies() {
-    local deps=("curl" "xmlstarlet" "fzf" "mpv")
+    local deps=("curl" "xmlstarlet" "fzf" "mpv" "md5sum")
     local missing=()
     
     for dep in "${deps[@]}"; do
@@ -547,6 +588,15 @@ Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
 }
 
 get_libraries() {
+    local cache_key
+    cache_key=$(get_cache_key "get_libraries")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi    # Changed from } to fi
+
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
 
@@ -555,11 +605,23 @@ get_libraries() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n | sed 's/&amp;/\&/g'
+    local result
+    result=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n | sed 's/&amp;/\&/g')
+    echo "$result" | cache_set "$cache_key"
+    echo "$result"
 }
 
 get_library_contents() {
     local library_key="$1"
+    local cache_key
+    cache_key=$(get_cache_key "get_library_contents" "$library_key")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi    # Changed from } to fi
+
     local page=1
     local page_size=50
     local all_items=""
@@ -586,55 +648,53 @@ get_library_contents() {
         return 0
     fi
 
-    {
-        echo "Retrieving contents of library: $library_name" >&2
-        echo "Total items: $total_size" >&2
-        clear >&2
+    echo "Retrieving contents of library: $library_name" >&2
+    echo "Total items: $total_size" >&2
+    clear >&2
     
-        while true; do
-            local start_index=$((($page - 1) * $page_size))
-            local response
-            response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=${start_index}&X-Plex-Container-Size=${page_size}")
-            if [[ -z "$response" ]]; then
-                echo "EMPTY_LIBRARY"
-                return 0
-            fi
-            local current_items
-            if [[ "$first_item_type" == "Video" ]]; then
-                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n | sed 's/&amp;/\&/g')
-            elif [[ "$first_item_type" == "Directory" ]]; then
-                current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g')
-            else
-                echo "EMPTY_LIBRARY"
-                return 0
-            fi
+    while true; do
+        local start_index=$((($page - 1) * $page_size))
+        local response
+        response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=${start_index}&X-Plex-Container-Size=${page_size}")
+        if [[ -z "$response" ]]; then
+            echo "EMPTY_LIBRARY"
+            return 0
+        fi
+        local current_items
+        if [[ "$first_item_type" == "Video" ]]; then
+            current_items=$(echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@title, ' (', @year, ')|', @ratingKey)" -n | sed 's/&amp;/\&/g')
+        elif [[ "$first_item_type" == "Directory" ]]; then
+            current_items=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g')
+        else
+            echo "EMPTY_LIBRARY"
+            return 0
+        fi
+        
+        if [[ -z "$current_items" ]]; then
+            break
+        fi
+        
+        all_items+="$current_items"$'\n'
+        local current_count=$((page * page_size))
+        if [[ $current_count -gt "$total_size" ]]; then
+            current_count="$total_size"
+        fi
+        
+        local progress_percent=$((current_count * 100 / total_size))
+        
+        printf "\rRetrieving items: [%-50s] %d%% (%d/%d)" \
+            "$(printf "#%.0s" $(seq 1 $((progress_percent / 2))))" \
+            "$progress_percent" "$current_count" "$total_size" >&2
             
-            if [[ -z "$current_items" ]]; then
-                break
-            fi
-            
-            all_items+="$current_items"$'\n'
-            local current_count=$((page * page_size))
-            if [[ $current_count -gt "$total_size" ]]; then
-                current_count="$total_size"
-            fi
-            
-            local progress_percent=$((current_count * 100 / total_size))
-            
-            printf "\rRetrieving items: [%-50s] %d%% (%d/%d)" \
-                "$(printf "#%.0s" $(seq 1 $((progress_percent / 2))))" \
-                "$progress_percent" "$current_count" "$total_size" >&2
-                
-            if [[ $((page * page_size)) -ge "$total_size" ]]; then
-                break
-            fi
-            ((page++))
-        done
-        echo "" >&2
-        clear >&2
-    }
+        if [[ $((page * page_size)) -ge "$total_size" ]]; then
+            break
+        fi
+        ((page++))
+    done
+    echo "" >&2
+    clear >&2
     
-    echo "$all_items" | sed '/^$/d'
+    echo "$all_items" | sed '/^$/d' | tee >(cache_set "$cache_key")
 }
 
 get_stream_url() {
@@ -662,8 +722,16 @@ get_stream_url() {
 
 get_albums() {
     local artist_key="$1"
-    local response
+    local cache_key
+    cache_key=$(get_cache_key "get_albums" "$artist_key")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi
 
+    local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${artist_key}/children")
 
     if [[ -z "$response" ]]; then
@@ -671,13 +739,22 @@ get_albums() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
+    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | 
+    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
 }
 
 get_tracks() {
     local album_key="$1"
-    local response
+    local cache_key
+    cache_key=$(get_cache_key "get_tracks" "$album_key")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi
 
+    local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${album_key}/children")
 
     if [[ -z "$response" ]]; then
@@ -685,13 +762,22 @@ get_tracks() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
+    echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
+    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
 }
 
 get_seasons() {
     local show_key="$1"
-    local response
+    local cache_key
+    cache_key=$(get_cache_key "get_seasons" "$show_key")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi
 
+    local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${show_key}/children")
 
     if [[ -z "$response" ]]; then
@@ -700,13 +786,21 @@ get_seasons() {
     fi
     
     echo "$response" | xmlstarlet sel -t -m "//Directory[@type='season']" -v "@title" -o "|" -v "@ratingKey" -n | \
-    grep -v "^All episodes|" | sort -V | sed 's/&amp;/\&/g'
+    grep -v "^All episodes|" | sort -V | sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
 }
 
 get_episodes() {
     local season_key="$1"
-    local response
+    local cache_key
+    cache_key=$(get_cache_key "get_episodes" "$season_key")
+    local cached_data
+    
+    if cached_data=$(cache_get "$cache_key"); then
+        echo "$cached_data"
+        return
+    fi
 
+    local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${season_key}/children")
 
     if [[ -z "$response" ]]; then
@@ -714,7 +808,8 @@ get_episodes() {
         exit 1
     fi
 
-    echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | sed 's/&amp;/\&/g'
+    echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
+    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
 }
 
 play_media() {
@@ -1389,6 +1484,7 @@ main() {
     check_dependencies
     check_plex_credentials
     create_download_dirs
+    clear_cache
     
     while getopts "hvu" opt; do
         case ${opt} in
