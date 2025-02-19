@@ -37,6 +37,7 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 - xmlstarlet
 - fzf
 - mpv
+- md5sum
 
 ## Installation
 

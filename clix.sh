@@ -49,7 +49,7 @@ CACHE_DIR="/tmp/clix_cache"
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -240,7 +240,7 @@ MENU STRUCTURE:
         Music: Select artist → album → track
 
 DEPENDENCIES:
-    Required: curl, xmlstarlet, fzf, mpv
+    Required: curl, xmlstarlet, fzf, mpv, md5sum
 
 Press q to return to main menu
 
