@@ -17,6 +17,10 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 - Built-in update mechanism
 - Robust error handling and dependency checking
 
+### If you find this tool useful, consider helping me buy more hard drives!
+
+[![](https://jereme.dev/images/paypal-donate-button.png)](https://www.paypal.com/ncp/payment/7WSTDKQ4PCNXQ)
+
 ## Screenshots
 
 ![Main Menu](https://raw.githubusercontent.com/jeremehancock/CLIX/main/screenshots/main.png "Main Menu")
