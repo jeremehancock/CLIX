@@ -19,7 +19,7 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 
 ## Support this project
 
-[![Donate](https://raw.githubusercontent.com/jeremehancock/Posteria/main/images/donate-button.png)](https://www.buymeacoffee.com/jereme)
+[![Donate](https://raw.githubusercontent.com/jeremehancock/Posteria/main/images/donate-button.png)](https://www.buymeacoffee.com/jeremehancock)
 
 ## Screenshots
 
