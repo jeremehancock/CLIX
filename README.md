@@ -151,4 +151,4 @@ If you want to connect remotely you will need to use something like [Tailscale](
 
 ## AI Assistance Disclosure
 
-This tool was developed with assistance from AI language models.
+This project was created with the help of AI.
