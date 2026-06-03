@@ -100,6 +100,13 @@ show_version() {
     check_version
 }
 
+# Compare two semantic version strings (e.g. 1.10.0 vs 1.9.0).
+# Returns success only if $1 is strictly newer than $2.
+version_gt() {
+    [[ "$1" != "$2" ]] &&
+        [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
+}
+
 check_version() {
     if ! command -v curl &> /dev/null; then
         echo -e "Error: curl is required for version checking"
@@ -114,7 +121,7 @@ check_version() {
         return 1
     fi
 
-    if [[ "$remote_version" > "$VERSION" ]]; then
+    if version_gt "$remote_version" "$VERSION"; then
         clear_cache
         echo -e "Update available: v$VERSION → v$remote_version"
         echo -e "Use the Update option in the main menu or run with -u to update to the latest version"
@@ -136,7 +143,7 @@ update_script() {
         return 1
     fi
 
-    if [[ "$remote_version" == "$VERSION" ]]; then
+    if ! version_gt "$remote_version" "$VERSION"; then
         echo -e "No updates available. You are running the latest version (v${VERSION})."
         return 0
     fi
@@ -601,8 +608,8 @@ get_libraries() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
 
     local result
@@ -705,19 +712,21 @@ get_stream_url() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
+        echo "Error: No response from Plex server." >&2
         return 1
     fi
 
     local stream_url
     stream_url=$(echo "$response" | xmlstarlet sel -t -m "//Part" -v "@key" -n)
 
-    if [[ -n "$stream_url" ]]; then
-        echo "${PLEX_URL}${stream_url}?X-Plex-Token=${PLEX_TOKEN}"
-    else
-        echo "Error: Could not retrieve stream URL."
+    if [[ -z "$stream_url" ]]; then
+        echo "Error: Could not retrieve stream URL." >&2
         return 1
     fi
+
+    # Return the URL without the token; callers pass it via an
+    # X-Plex-Token header so it never appears in the process list.
+    echo "${PLEX_URL}${stream_url}"
 }
 
 get_albums() {
@@ -735,8 +744,8 @@ get_albums() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${artist_key}/children")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
 
     echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | 
@@ -758,8 +767,8 @@ get_tracks() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${album_key}/children")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
 
     echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
@@ -781,8 +790,8 @@ get_seasons() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${show_key}/children")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
     
     echo "$response" | xmlstarlet sel -t -m "//Directory[@type='season']" -v "@title" -o "|" -v "@ratingKey" -n | \
@@ -804,8 +813,8 @@ get_episodes() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${season_key}/children")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
 
     echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
@@ -818,18 +827,16 @@ play_media() {
     local title="$3"
 
     local media_url
-    media_url=$(get_stream_url "$media_key" "$media_type")
-
-    if [[ -n "$media_url" ]]; then
-        echo "Playing $media_type: $title"
-        mpv --title="$title" "$media_url"
-        clear
-        return 0
-    else
+    if ! media_url=$(get_stream_url "$media_key" "$media_type"); then
         echo "Error: Could not retrieve stream URL."
-        read -p "Press Enter to continue..." 
+        read -p "Press Enter to continue..."
         return 1
     fi
+
+    echo "Playing $media_type: $title"
+    mpv --http-header-fields="X-Plex-Token: $PLEX_TOKEN" --title="$title" "$media_url"
+    clear
+    return 0
 }
 
 download_media() {
@@ -848,9 +855,7 @@ download_media() {
     fi
     
     local media_url
-    media_url=$(get_stream_url "$media_key" "$media_type")
-    
-    if [[ -z "$media_url" ]]; then
+    if ! media_url=$(get_stream_url "$media_key" "$media_type"); then
         echo "Error: Could not retrieve download URL."
         read -p "Press Enter to continue..."
         return 1
@@ -1481,11 +1486,6 @@ main_menu() {
 }
 
 main() {
-    check_dependencies
-    check_plex_credentials
-    create_download_dirs
-    clear_cache
-    
     while getopts "hvu" opt; do
         case ${opt} in
             h )
@@ -1508,7 +1508,12 @@ main() {
         esac
     done
     shift $((OPTIND -1))
-    
+
+    check_dependencies
+    check_plex_credentials
+    create_download_dirs
+    clear_cache
+
     clear
     echo "-------------------------------------------------------------------------"
     echo "CLIX v${VERSION}"
