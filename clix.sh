@@ -39,17 +39,21 @@ PLEX_TOKEN=""
 # Directory Settings #
 ######################
 
-DOWNLOAD_BASE_DIR="downloads"
+# Resolve the script's own location so downloads, backups and cache do not
+# depend on the directory the user happens to launch CLIX from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DOWNLOAD_BASE_DIR="${SCRIPT_DIR}/downloads"
 MOVIES_DIR="${DOWNLOAD_BASE_DIR}/movies"
 SHOWS_DIR="${DOWNLOAD_BASE_DIR}/shows"
 MUSIC_DIR="${DOWNLOAD_BASE_DIR}/music"
-CACHE_DIR="/tmp/clix_cache"
+CACHE_DIR="/tmp/clix_cache_$(id -u)"
 
 ########################################################################################################
 ################################### DO NOT EDIT ANYTHING BELOW #########################################
 ########################################################################################################
 
-VERSION="1.3.1"
+VERSION="1.4.0"
 
 create_download_dirs() {
     mkdir -p "${MOVIES_DIR}"
@@ -59,7 +63,7 @@ create_download_dirs() {
 }
 
 clear_cache() {
-    rm -rf "${CACHE_DIR}"/*
+    rm -rf "${CACHE_DIR:?}"/*
 }
 
 get_cache_key() {
@@ -72,14 +76,14 @@ get_cache_key() {
 cache_get() {
     local cache_key="$1"
     local cache_file="${CACHE_DIR}/${cache_key}"
-    
+
     if [[ -f "$cache_file" ]]; then
         local cache_time
         cache_time=$(stat -c %Y "$cache_file")
         local current_time
         current_time=$(date +%s)
         local age=$((current_time - cache_time))
-        
+
         # Cache expires after 1 hour
         if [[ $age -lt 3600 ]]; then
             cat "$cache_file"
@@ -100,6 +104,13 @@ show_version() {
     check_version
 }
 
+# Compare two semantic version strings (e.g. 1.10.0 vs 1.9.0).
+# Returns success only if $1 is strictly newer than $2.
+version_gt() {
+    [[ "$1" != "$2" ]] &&
+        [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
+}
+
 check_version() {
     if ! command -v curl &> /dev/null; then
         echo -e "Error: curl is required for version checking"
@@ -108,13 +119,13 @@ check_version() {
 
     local remote_version
     remote_version=$(curl -s https://raw.githubusercontent.com/jeremehancock/CLIX/refs/heads/main/clix.sh | grep "^VERSION=" | cut -d'"' -f2)
-    
+
     if [[ -z "$remote_version" ]]; then
         echo -e "Error: Could not fetch remote version"
         return 1
     fi
 
-    if [[ "$remote_version" > "$VERSION" ]]; then
+    if version_gt "$remote_version" "$VERSION"; then
         clear_cache
         echo -e "Update available: v$VERSION → v$remote_version"
         echo -e "Use the Update option in the main menu or run with -u to update to the latest version"
@@ -130,58 +141,59 @@ update_script() {
 
     local remote_version
     remote_version=$(curl -s https://raw.githubusercontent.com/jeremehancock/CLIX/refs/heads/main/clix.sh | grep "^VERSION=" | cut -d'"' -f2)
-    
+
     if [[ -z "$remote_version" ]]; then
         echo -e "Error: Could not fetch remote version"
         return 1
     fi
 
-    if [[ "$remote_version" == "$VERSION" ]]; then
+    if ! version_gt "$remote_version" "$VERSION"; then
         echo -e "No updates available. You are running the latest version (v${VERSION})."
         return 0
     fi
 
     echo -e "Update available: v$VERSION → v$remote_version"
-    
-    local backup_dir="backups"
-    mkdir -p "$backup_dir"
 
-    local script_name=$(basename "$0")
-    local backup_file="${backup_dir}/${script_name}.v${VERSION}.backup"
-    cp "$0" "$backup_file"
-    
+    local script_name backup_dir backup_file target
+    script_name=$(basename "${BASH_SOURCE[0]}")
+    target="${SCRIPT_DIR}/${script_name}"
+    backup_dir="${SCRIPT_DIR}/backups"
+    backup_file="${backup_dir}/${script_name}.v${VERSION}.backup"
+    mkdir -p "$backup_dir"
+    cp "$target" "$backup_file"
+
     echo -n "Do you want to proceed with the update? [y/N] "
     read -r response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         echo "Update cancelled."
+        rm -f "$backup_file"
         return 0
     fi
-    
-    if curl -o "$script_name" -L https://raw.githubusercontent.com/jeremehancock/CLIX/main/clix.sh; then
+
+    if curl -o "$target" -L https://raw.githubusercontent.com/jeremehancock/CLIX/main/clix.sh; then
         clear_cache
-        local last_backup=$(ls -t "$backup_dir"/*.backup | head -n 1)
-        
-        if [[ -n "$last_backup" ]]; then
-            local old_plex_url=$(grep "^PLEX_URL=" "$last_backup" | cut -d'"' -f2)
-            local old_plex_token=$(grep "^PLEX_TOKEN=" "$last_backup" | cut -d'"' -f2)
-            
-            if [[ -n "$old_plex_url" ]]; then
-                sed -i "s|^PLEX_URL=.*|PLEX_URL=\"$old_plex_url\"|" "$script_name"
-            fi
-            
-            if [[ -n "$old_plex_token" ]]; then
-                sed -i "s|^PLEX_TOKEN=.*|PLEX_TOKEN=\"$old_plex_token\"|" "$script_name"
-            fi
+
+        # Carry the user's existing credentials over from the backup we just made.
+        local old_plex_url old_plex_token
+        old_plex_url=$(grep "^PLEX_URL=" "$backup_file" | cut -d'"' -f2)
+        old_plex_token=$(grep "^PLEX_TOKEN=" "$backup_file" | cut -d'"' -f2)
+
+        if [[ -n "$old_plex_url" ]]; then
+            sed -i "s|^PLEX_URL=.*|PLEX_URL=\"$old_plex_url\"|" "$target"
         fi
-        
-        chmod +x "$script_name"
+
+        if [[ -n "$old_plex_token" ]]; then
+            sed -i "s|^PLEX_TOKEN=.*|PLEX_TOKEN=\"$old_plex_token\"|" "$target"
+        fi
+
+        chmod +x "$target"
         echo -e "Successfully updated script"
         echo -e "Previous version backed up to $backup_file"
-        
+
         exit 0
     else
         echo -e "Update failed"
-        mv "$backup_file" "$script_name"
+        mv "$backup_file" "$target"
         return 1
     fi
 }
@@ -189,14 +201,14 @@ update_script() {
 display_help() {
     # Disable terminal echoing to prevent screen clearing
     stty -echo
-    
+
     # Clear the screen and display help
     clear
     show_help | less -R
 
     # Re-enable terminal echoing
     stty echo
-    
+
     # Clear screen after help
     clear
 }
@@ -227,13 +239,13 @@ MENU STRUCTURE:
         - Update
         - Help
         - Quit
-    
+
     2. Library Selection
         → Select your preferred library
-        
-        If there is only one library of the selected 
+
+        If there is only one library of the selected
         library type it will be auto selected
-    
+
     3. Media Selection
         Movies: Select movie from list
         TV Shows: Select show → season → episode
@@ -250,13 +262,13 @@ EOF
 check_dependencies() {
     local deps=("curl" "xmlstarlet" "fzf" "mpv" "md5sum")
     local missing=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             missing+=("$dep")
         fi
     done
-    
+
     if [ ${#missing[@]} -ne 0 ]; then
         echo "Missing required dependencies: ${missing[*]}"
         echo "Please install them and try again."
@@ -266,16 +278,16 @@ check_dependencies() {
 
 check_plex_credentials() {
     echo "Checking Plex server connection..."
-    
+
     if [ -z "$PLEX_URL" ] || [ -z "$PLEX_TOKEN" ]; then
         echo "Error: Plex URL or token not set"
         echo "Please edit this script and add your Plex credentials"
         exit 1
     fi
-    
+
     local basic_response
     basic_response=$(curl -s -m 10 "${PLEX_URL}/identity")
-    
+
     if [[ -z "$basic_response" ]]; then
         echo "Error: Could not connect to Plex server at ${PLEX_URL}"
         echo "Please check if:"
@@ -287,7 +299,7 @@ check_plex_credentials() {
 
     local auth_response
     auth_response=$(curl -s -m 10 -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
-    
+
     if ! echo "$auth_response" | xmlstarlet sel -t -v "/MediaContainer" &>/dev/null; then
         echo "Error: Invalid Plex token or unauthorized access"
         echo "The server is reachable, but the provided token does not have proper access permissions"
@@ -297,17 +309,17 @@ check_plex_credentials() {
 
     local server_info
     server_info=$(curl -s -m 10 -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/")
-    
+
     local server_name
     server_name=$(echo "$server_info" | xmlstarlet sel -t -v "/MediaContainer/@friendlyName" 2>/dev/null)
-    
+
     if [[ -z "$server_name" ]]; then
         server_name=$(echo "$server_info" | xmlstarlet sel -t -v "/MediaContainer/@title" 2>/dev/null || echo "Unknown")
     fi
 
     local library_count
     library_count=$(echo "$auth_response" | xmlstarlet sel -t -v "count(/MediaContainer/Directory)")
-    
+
     echo "Successfully connected to Plex server: $server_name"
     echo "Found $library_count available libraries"
     sleep 2
@@ -317,7 +329,7 @@ downloads_menu() {
     while true; do
         local choice
         choice=$(echo -e "Movies\nTV Shows\nMusic" | fzf --reverse --header="Downloads Menu" --prompt="Search Downloads > ")
-        
+
         case "$choice" in
             Movies) list_downloaded_movies ;;
             "TV Shows") list_downloaded_shows ;;
@@ -337,10 +349,10 @@ list_downloaded_movies() {
     while true; do
         local movies
         movies=$(find "$MOVIES_DIR" -type f -exec basename {} \; | sort -k2,2)
-        
+
         local display_movies=""
         declare -A filename_map
-        
+
         while IFS= read -r movie; do
             local display_name="${movie%.*}"
             # Convert asterisks back to slashes for display
@@ -348,16 +360,16 @@ list_downloaded_movies() {
             display_movies+="$display_name"$'\n'
             filename_map["$display_name"]="$movie"
         done <<< "$movies"
-        
+
         local chosen_display
         chosen_display=$(echo -e "$display_movies" | sed '/^$/d' | fzf --reverse --header="Select Downloaded Movie" --prompt="Search Downloaded Movies > ")
-        
+
         if [[ -z "$chosen_display" ]]; then
             break
         fi
 
         local movie_file="${filename_map[$chosen_display]}"
-        
+
         mpv --title="$chosen_display" "${MOVIES_DIR}/${movie_file}"
         clear
     done
@@ -373,17 +385,17 @@ list_downloaded_shows() {
     while true; do
         local shows
         shows=$(find "$SHOWS_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -k2,2)
-        
+
         # Convert asterisks to slashes for display
         local display_shows=""
         declare -A show_map
-        
+
         while IFS= read -r show; do
-            local display_name=$(echo "$show" | tr '*' '/')
+            local display_name="${show//\*//}"
             display_shows+="$display_name"$'\n'
             show_map["$display_name"]="$show"
         done <<< "$shows"
-        
+
         local chosen_show_display
         chosen_show_display=$(echo -e "$display_shows" | sed '/^$/d' | fzf --reverse --header="Select Downloaded TV Show" --prompt="Search Downloaded TV Shows > ")
 
@@ -396,7 +408,7 @@ list_downloaded_shows() {
         while true; do
             local seasons
             seasons=$(find "$SHOWS_DIR/$original_show" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
-            
+
             if [[ -z "$seasons" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No seasons found" --disabled
                 clear
@@ -406,7 +418,7 @@ list_downloaded_shows() {
             local display_seasons=""
             declare -A season_map
             while IFS= read -r season; do
-                local display_name=$(echo "$season" | tr '*' '/')
+                local display_name="${season//\*//}"
                 display_seasons+="$display_name"$'\n'
                 season_map["$display_name"]="$season"
             done <<< "$seasons"
@@ -414,7 +426,7 @@ list_downloaded_shows() {
             local chosen_season_display
             chosen_season_display=$(echo -e "$display_seasons" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
 Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
-            
+
             if [[ -z "$chosen_season_display" ]]; then
                 break
             fi
@@ -424,7 +436,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
             while true; do
                 local episodes
                 episodes=$(find "$SHOWS_DIR/$original_show/$original_season" -type f -exec basename {} \; | sort -V)
-                
+
                 if [[ -z "$episodes" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No episodes found" --disabled
                     clear
@@ -433,7 +445,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
 
                 local display_episodes=""
                 declare -A filename_map
-                
+
                 while IFS= read -r episode; do
                     local base_name="${episode%.*}"
                     # Extract episode number and title
@@ -448,7 +460,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                         filename_map["$display_name"]="$episode"
                     else
                         # Fallback to full name if pattern doesn't match
-                        local display_name=$(echo "$base_name" | tr '*' '/')
+                        local display_name="${base_name//\*//}"
                         display_episodes+="$display_name"$'\n'
                         filename_map["$display_name"]="$episode"
                     fi
@@ -458,7 +470,7 @@ Select Downloaded Season" --prompt="Search Downloaded Seasons > ")
                 chosen_display=$(echo -e "$display_episodes" | sed '/^$/d' | fzf --reverse --header="TV Show: $chosen_show_display
 Season: $chosen_season_display
 Select Downloaded Episode" --prompt="Search Downloaded Episodes > ")
-                
+
                 if [[ -z "$chosen_display" ]]; then
                     break
                 fi
@@ -490,19 +502,19 @@ list_downloaded_music() {
     while true; do
         local artists
         artists=$(find "$MUSIC_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
-        
+
         local display_artists=""
         declare -A artist_map
         while IFS= read -r artist; do
             # Convert asterisks to slashes for display
-            local display_name=$(echo "$artist" | tr '*' '/')
+            local display_name="${artist//\*//}"
             display_artists+="$display_name"$'\n'
             artist_map["$display_name"]="$artist"
         done <<< "$artists"
-        
+
         local chosen_artist_display
         chosen_artist_display=$(echo -e "$display_artists" | sed '/^$/d' | fzf --reverse --header="Select Downloaded Artist" --prompt="Search Downloaded Artists > ")
-        
+
         if [[ -z "$chosen_artist_display" ]]; then
             break
         fi
@@ -512,7 +524,7 @@ list_downloaded_music() {
         while true; do
             local albums
             albums=$(find "$MUSIC_DIR/$original_artist" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
-            
+
             if [[ -z "$albums" ]]; then
                 echo -e "< Go back" | fzf --reverse --header="No albums found" --disabled
                 clear
@@ -523,7 +535,7 @@ list_downloaded_music() {
             declare -A album_map
             while IFS= read -r album; do
                 # Convert asterisks to slashes for display
-                local display_name=$(echo "$album" | tr '*' '/')
+                local display_name="${album//\*//}"
                 display_albums+="$display_name"$'\n'
                 album_map["$display_name"]="$album"
             done <<< "$albums"
@@ -531,7 +543,7 @@ list_downloaded_music() {
             local chosen_album_display
             chosen_album_display=$(echo -e "$display_albums" | sed '/^$/d' | fzf --reverse --header="Artist: $chosen_artist_display
 Select Downloaded Album" --prompt="Search Downloaded Albums > ")
-            
+
             if [[ -z "$chosen_album_display" ]]; then
                 break
             fi
@@ -541,7 +553,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
             while true; do
                 local tracks
                 tracks=$(find "$MUSIC_DIR/$original_artist/$original_album" -type f -exec basename {} \; | sort -V)
-                
+
                 if [[ -z "$tracks" ]]; then
                     echo -e "< Go back" | fzf --reverse --header="No tracks found" --disabled
                     clear
@@ -564,7 +576,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                         track_map["$display_name"]="$track"
                     else
                         # Fallback to full name if pattern doesn't match
-                        local display_name=$(echo "$base_name" | tr '*' '/')
+                        local display_name="${base_name//\*//}"
                         display_tracks+="$display_name"$'\n'
                         track_map["$display_name"]="$track"
                     fi
@@ -574,7 +586,7 @@ Select Downloaded Album" --prompt="Search Downloaded Albums > ")
                 chosen_track_display=$(echo -e "$display_tracks" | sed '/^$/d' | fzf --reverse --header="Artist: $chosen_artist_display
 Album: $chosen_album_display
 Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
-                
+
                 if [[ -z "$chosen_track_display" ]]; then
                     break
                 fi
@@ -587,28 +599,33 @@ Select Downloaded Track" --prompt="Search Downloaded Tracks > ")
     done
 }
 
-get_libraries() {
-    local cache_key
-    cache_key=$(get_cache_key "get_libraries")
+# Fetch a Plex endpoint and emit the parsed, entity-decoded result, caching it
+# on disk. Usage: cached_plex_query <cache_key> <url> <xmlstarlet args...>
+cached_plex_query() {
+    local cache_key="$1" url="$2"
+    shift 2
+
     local cached_data
-    
     if cached_data=$(cache_get "$cache_key"); then
-        echo "$cached_data"
-        return
-    fi    # Changed from } to fi
-
-    local response
-    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections")
-
-    if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        printf '%s\n' "$cached_data"
+        return 0
     fi
 
-    local result
-    result=$(echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n | sed 's/&amp;/\&/g')
-    echo "$result" | cache_set "$cache_key"
-    echo "$result"
+    local response
+    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "$url")
+
+    if [[ -z "$response" ]]; then
+        echo "Error: No response from Plex server." >&2
+        return 1
+    fi
+
+    echo "$response" | xmlstarlet "$@" | sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
+}
+
+get_libraries() {
+    cached_plex_query "$(get_cache_key "get_libraries")" \
+        "${PLEX_URL}/library/sections" \
+        sel -t -m "//Directory" -v "concat(@key, '|', @title, '|', @type)" -n
 }
 
 get_library_contents() {
@@ -616,7 +633,7 @@ get_library_contents() {
     local cache_key
     cache_key=$(get_cache_key "get_library_contents" "$library_key")
     local cached_data
-    
+
     if cached_data=$(cache_get "$cache_key"); then
         echo "$cached_data"
         return
@@ -625,22 +642,22 @@ get_library_contents() {
     local page=1
     local page_size=50
     local all_items=""
-    
+
     local libraries
     libraries=$(get_libraries | grep "|${library_key}|")
     local library_name
     library_name=$(echo "$libraries" | cut -d'|' -f2)
-    
+
     local total_size
     local first_response
     first_response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1")
     total_size=$(echo "$first_response" | xmlstarlet sel -t -v "/MediaContainer/@totalSize" -n)
-    
+
     if [[ "$total_size" -eq 0 ]]; then
         echo "EMPTY_LIBRARY"
         return 0
     fi
-    
+
     local first_item_type
     first_item_type=$(echo "$first_response" | xmlstarlet sel -t -m "//Video | //Directory" -v "name()" -n | head -n 1)
     if [[ -z "$first_item_type" ]]; then
@@ -651,9 +668,9 @@ get_library_contents() {
     echo "Retrieving contents of library: $library_name" >&2
     echo "Total items: $total_size" >&2
     clear >&2
-    
+
     while true; do
-        local start_index=$((($page - 1) * $page_size))
+        local start_index=$(((page - 1) * page_size))
         local response
         response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/sections/${library_key}/all?X-Plex-Container-Start=${start_index}&X-Plex-Container-Size=${page_size}")
         if [[ -z "$response" ]]; then
@@ -669,23 +686,23 @@ get_library_contents() {
             echo "EMPTY_LIBRARY"
             return 0
         fi
-        
+
         if [[ -z "$current_items" ]]; then
             break
         fi
-        
+
         all_items+="$current_items"$'\n'
         local current_count=$((page * page_size))
         if [[ $current_count -gt "$total_size" ]]; then
             current_count="$total_size"
         fi
-        
+
         local progress_percent=$((current_count * 100 / total_size))
-        
+
         printf "\rRetrieving items: [%-50s] %d%% (%d/%d)" \
             "$(printf "#%.0s" $(seq 1 $((progress_percent / 2))))" \
             "$progress_percent" "$current_count" "$total_size" >&2
-            
+
         if [[ $((page * page_size)) -ge "$total_size" ]]; then
             break
         fi
@@ -693,7 +710,7 @@ get_library_contents() {
     done
     echo "" >&2
     clear >&2
-    
+
     echo "$all_items" | sed '/^$/d' | tee >(cache_set "$cache_key")
 }
 
@@ -705,65 +722,35 @@ get_stream_url() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
+        echo "Error: No response from Plex server." >&2
         return 1
     fi
 
     local stream_url
     stream_url=$(echo "$response" | xmlstarlet sel -t -m "//Part" -v "@key" -n)
 
-    if [[ -n "$stream_url" ]]; then
-        echo "${PLEX_URL}${stream_url}?X-Plex-Token=${PLEX_TOKEN}"
-    else
-        echo "Error: Could not retrieve stream URL."
+    if [[ -z "$stream_url" ]]; then
+        echo "Error: Could not retrieve stream URL." >&2
         return 1
     fi
+
+    # Return the URL without the token; callers pass it via an
+    # X-Plex-Token header so it never appears in the process list.
+    echo "${PLEX_URL}${stream_url}"
 }
 
 get_albums() {
     local artist_key="$1"
-    local cache_key
-    cache_key=$(get_cache_key "get_albums" "$artist_key")
-    local cached_data
-    
-    if cached_data=$(cache_get "$cache_key"); then
-        echo "$cached_data"
-        return
-    fi
-
-    local response
-    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${artist_key}/children")
-
-    if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
-    fi
-
-    echo "$response" | xmlstarlet sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n | 
-    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
+    cached_plex_query "$(get_cache_key "get_albums" "$artist_key")" \
+        "${PLEX_URL}/library/metadata/${artist_key}/children" \
+        sel -t -m "//Directory" -v "concat(@title, '|', @ratingKey)" -n
 }
 
 get_tracks() {
     local album_key="$1"
-    local cache_key
-    cache_key=$(get_cache_key "get_tracks" "$album_key")
-    local cached_data
-    
-    if cached_data=$(cache_get "$cache_key"); then
-        echo "$cached_data"
-        return
-    fi
-
-    local response
-    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${album_key}/children")
-
-    if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
-    fi
-
-    echo "$response" | xmlstarlet sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
-    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
+    cached_plex_query "$(get_cache_key "get_tracks" "$album_key")" \
+        "${PLEX_URL}/library/metadata/${album_key}/children" \
+        sel -t -m "//Track" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
 }
 
 get_seasons() {
@@ -771,7 +758,7 @@ get_seasons() {
     local cache_key
     cache_key=$(get_cache_key "get_seasons" "$show_key")
     local cached_data
-    
+
     if cached_data=$(cache_get "$cache_key"); then
         echo "$cached_data"
         return
@@ -781,35 +768,19 @@ get_seasons() {
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${show_key}/children")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
+        echo "Error: No response from Plex server." >&2
+        return 1
     fi
-    
+
     echo "$response" | xmlstarlet sel -t -m "//Directory[@type='season']" -v "@title" -o "|" -v "@ratingKey" -n | \
     grep -v "^All episodes|" | sort -V | sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
 }
 
 get_episodes() {
     local season_key="$1"
-    local cache_key
-    cache_key=$(get_cache_key "get_episodes" "$season_key")
-    local cached_data
-    
-    if cached_data=$(cache_get "$cache_key"); then
-        echo "$cached_data"
-        return
-    fi
-
-    local response
-    response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${season_key}/children")
-
-    if [[ -z "$response" ]]; then
-        echo "Error: No response from Plex server."
-        exit 1
-    fi
-
-    echo "$response" | xmlstarlet sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n | 
-    sed 's/&amp;/\&/g' | tee >(cache_set "$cache_key")
+    cached_plex_query "$(get_cache_key "get_episodes" "$season_key")" \
+        "${PLEX_URL}/library/metadata/${season_key}/children" \
+        sel -t -m "//Video" -v "concat(@index, '. ', @title, '|', @ratingKey)" -n
 }
 
 play_media() {
@@ -818,109 +789,110 @@ play_media() {
     local title="$3"
 
     local media_url
-    media_url=$(get_stream_url "$media_key" "$media_type")
-
-    if [[ -n "$media_url" ]]; then
-        echo "Playing $media_type: $title"
-        mpv --title="$title" "$media_url"
-        clear
-        return 0
-    else
+    if ! media_url=$(get_stream_url "$media_key" "$media_type"); then
         echo "Error: Could not retrieve stream URL."
-        read -p "Press Enter to continue..." 
+        read -r -p "Press Enter to continue..."
         return 1
     fi
+
+    echo "Playing $media_type: $title"
+    mpv --http-header-fields="X-Plex-Token: $PLEX_TOKEN" --title="$title" "$media_url"
+    clear
+    return 0
+}
+
+# Decode &amp; and strip characters that are unsafe in filenames (stdin -> stdout).
+sanitize_name() {
+    sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-'
 }
 
 download_media() {
     local media_key="$1"
     local media_type="$2"
     local title="$3"
-    local additional_path="$4"
-    
+
     echo -n "Do you want to proceed with the download? [y/N] "
     read -r response
     clear
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         echo "Download cancelled."
-        read -p "Press Enter to continue..." 
+        read -r -p "Press Enter to continue..."
         return 0
     fi
-    
+
     local media_url
-    media_url=$(get_stream_url "$media_key" "$media_type")
-    
-    if [[ -z "$media_url" ]]; then
+    if ! media_url=$(get_stream_url "$media_key" "$media_type"); then
         echo "Error: Could not retrieve download URL."
-        read -p "Press Enter to continue..."
+        read -r -p "Press Enter to continue..."
         return 1
     fi
-    
+
     local original_ext
     original_ext=$(echo "$media_url" | grep -oP '\.[^./?]+(?=(\?|$))' || echo ".mp4")
-    
+
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
-    
-    local display_filename
-    local safe_filename
-    local relative_path
+
+    local display_filename safe_filename relative_path
     case "$media_type" in
         movie)
             local clean_title
             clean_title=$(echo "$title" | sed -E 's/ \([0-9]{4}\)$//')
-            
+
             local year
             year=$(echo "$response" | xmlstarlet sel -t -v "//Video/@year" 2>/dev/null)
-            
+
             # Keep original title for display
             if [[ -n "$year" ]]; then
                 display_filename="${clean_title} (${year})${original_ext}"
             else
                 display_filename="${clean_title}${original_ext}"
             fi
-            
+
             # Create safe version for filesystem
             safe_filename=$(echo "$display_filename" | tr '/' '*')
             ;;
         episode)
-            local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
-            local season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
-            local episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
-            local episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
-            
+            local show_title season_num episode_num episode_title season_folder
+            show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
+            season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
+            episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
+            episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
+            season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
+
             season_num=$(printf "%02d" "$season_num")
             episode_num=$(printf "%02d" "$episode_num")
-            
-            local season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
-            
+
             # Create display versions with slashes
             display_filename="${show_title} - S${season_num}E${episode_num} - ${episode_title}${original_ext}"
-            
+
             # Create safe versions with asterisks for filesystem
-            local show_title_safe=$(echo "$show_title" | tr '/' '*')
-            local season_folder_safe=$(echo "$season_folder" | tr '/' '*')
-            local episode_title_safe=$(echo "$episode_title" | tr '/' '*')
-            
+            local show_title_safe season_folder_safe episode_title_safe
+            show_title_safe=$(echo "$show_title" | tr '/' '*')
+            season_folder_safe=$(echo "$season_folder" | tr '/' '*')
+            episode_title_safe=$(echo "$episode_title" | tr '/' '*')
+
             relative_path="${show_title_safe}/${season_folder_safe}"
             safe_filename="${show_title_safe} - S${season_num}E${episode_num} - ${episode_title_safe}${original_ext}"
             ;;
         music)
-            local artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
-            local album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
-            local track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
-            local track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
-            
+            local artist album track_num track_title
+            artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
+            album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
+            track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
+            track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
+
             track_num=$(printf "%02d" "$track_num")
-            
+
             # Create display version with slashes
             display_filename="${artist} - ${album} - ${track_num} - ${track_title}${original_ext}"
-            
+
             # Create safe versions with asterisks for filesystem
-            local artist_safe=$(echo "$artist" | tr '/' '*')
-            local album_safe=$(echo "$album" | tr '/' '*')
-            local track_title_safe=$(echo "$track_title" | tr '/' '*')
-            
+            local artist_safe album_safe track_title_safe
+            artist_safe=$(echo "$artist" | tr '/' '*')
+            album_safe=$(echo "$album" | tr '/' '*')
+            track_title_safe=$(echo "$track_title" | tr '/' '*')
+
             relative_path="${artist_safe}/${album_safe}"
             safe_filename="${artist_safe} - ${album_safe} - ${track_num} - ${track_title_safe}${original_ext}"
             ;;
@@ -929,12 +901,12 @@ download_media() {
             return 1
             ;;
     esac
-    
-    # Replace &amp; with & in filenames and paths for downloads
-    display_filename=$(echo "$display_filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
-    safe_filename=$(echo "$safe_filename" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
-    [[ -n "$relative_path" ]] && relative_path=$(echo "$relative_path" | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
-    
+
+    # Decode &amp; and strip characters unsafe in filenames
+    display_filename=$(echo "$display_filename" | sanitize_name)
+    safe_filename=$(echo "$safe_filename" | sanitize_name)
+    [[ -n "$relative_path" ]] && relative_path=$(echo "$relative_path" | sanitize_name)
+
     local target_dir
     case "$media_type" in
         movie)
@@ -947,12 +919,12 @@ download_media() {
             target_dir="${MUSIC_DIR}/${relative_path}"
             ;;
     esac
-    
+
     mkdir -p "$target_dir"
-    
+
     echo "Downloading: ${display_filename}"
     echo "Destination: ${target_dir}/${safe_filename}"
-    
+
     if curl -# -L \
         -H "X-Plex-Token: $PLEX_TOKEN" \
         --progress-bar \
@@ -963,8 +935,23 @@ download_media() {
         echo "Download failed!"
         return 1
     fi
-    
-    read -p "Press Enter to continue..."
+
+    read -r -p "Press Enter to continue..."
+}
+
+# Build a filesystem-safe path by sanitizing each '/'-separated component.
+safe_join_path() {
+    local result="" part parts
+    IFS='/' read -ra parts <<< "$1"
+    for part in "${parts[@]}"; do
+        part=$(echo "$part" | tr '/' '*' | sanitize_name)
+        if [ -z "$result" ]; then
+            result="$part"
+        else
+            result="$result/$part"
+        fi
+    done
+    printf '%s' "$result"
 }
 
 check_local_file() {
@@ -973,33 +960,21 @@ check_local_file() {
     local additional_path="$3"
     local search_dir
     local found_file=""
-    
+
     case "$media_type" in
         episode)
-            local base_search_dir="${SHOWS_DIR}"
-            
-            # Replace forward slashes with asterisks in the path components
-            local processed_path=""
-            IFS='/' read -ra path_parts <<< "$additional_path"
-            for part in "${path_parts[@]}"; do
-                local processed_part=$(echo "$part" | tr '/' '*' | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
-                if [ -z "$processed_path" ]; then
-                    processed_path="$processed_part"
-                else
-                    processed_path="$processed_path/$processed_part"
-                fi
-            done
-            
-            search_dir="${base_search_dir}/${processed_path}"
-            
+            search_dir="${SHOWS_DIR}/$(safe_join_path "$additional_path")"
+
             # Convert title to use asterisks for filesystem matching
-            local safe_title=$(echo "$title" | tr '/' '*')
-            
+            local safe_title
+            safe_title=$(echo "$title" | tr '/' '*')
+
             if [[ -d "$search_dir" ]]; then
                 if [[ "$safe_title" =~ ^(.+)[[:space:]]-[[:space:]]S([0-9]+)E([0-9]+)[[:space:]]-[[:space:]] ]]; then
                     while IFS= read -r -d $'\0' file; do
-                        local basename_file=$(basename "$file")
-                        local basename_no_ext="${basename_file%.*}"
+                        local basename_file basename_no_ext
+                        basename_file=$(basename "$file")
+                        basename_no_ext="${basename_file%.*}"
 
                         if [[ "$basename_no_ext" == "$safe_title" ]]; then
                             found_file="$file"
@@ -1009,55 +984,48 @@ check_local_file() {
                 fi
             fi
             ;;
-            
+
         movie)
             search_dir="${MOVIES_DIR}"
-            local safe_title=$(echo "$title" | tr '/' '*')
-            
+            local safe_title
+            safe_title=$(echo "$title" | tr '/' '*')
+
             while IFS= read -r -d $'\0' file; do
-                local basename_file=$(basename "$file")
-                local basename_no_ext="${basename_file%.*}"
-                
+                local basename_file basename_no_ext
+                basename_file=$(basename "$file")
+                basename_no_ext="${basename_file%.*}"
+
                 if [[ "$basename_no_ext" == "$safe_title" ]]; then
                     found_file="$file"
                     break
                 fi
             done < <(find "$search_dir" -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" \) -print0)
             ;;
-            
+
         music)
-            local base_search_dir="${MUSIC_DIR}"
-            
-            # Replace forward slashes with asterisks in the path components
-            local processed_path=""
+            local path_parts
             IFS='/' read -ra path_parts <<< "$additional_path"
-            for part in "${path_parts[@]}"; do
-                local processed_part=$(echo "$part" | tr '/' '*' | sed 's/&amp;/\&/g' | tr -d '\"' | tr ':' '-')
-                if [ -z "$processed_path" ]; then
-                    processed_path="$processed_part"
-                else
-                    processed_path="$processed_path/$processed_part"
-                fi
-            done
-            
-            search_dir="${base_search_dir}/${processed_path}"
-            
+            search_dir="${MUSIC_DIR}/$(safe_join_path "$additional_path")"
+
             if [[ -d "$search_dir" ]]; then
                 if [[ "$title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
-                    local track_num=$(printf "%02d" "${BASH_REMATCH[1]}")
-                    local track_name="${BASH_REMATCH[2]}"
-                    
+                    local track_num track_name
+                    track_num=$(printf "%02d" "${BASH_REMATCH[1]}")
+                    track_name="${BASH_REMATCH[2]}"
+
                     # Use the safe versions for filesystem operations
-                    local artist_safe=$(echo "${path_parts[0]}" | tr '/' '*')
-                    local album_safe=$(echo "${path_parts[1]}" | tr '/' '*')
-                    local track_name_safe=$(echo "$track_name" | tr '/' '*')
-                    
+                    local artist_safe album_safe track_name_safe
+                    artist_safe=$(echo "${path_parts[0]}" | tr '/' '*')
+                    album_safe=$(echo "${path_parts[1]}" | tr '/' '*')
+                    track_name_safe=$(echo "$track_name" | tr '/' '*')
+
                     while IFS= read -r -d $'\0' file; do
-                        local basename_file=$(basename "$file")
-                        local escaped_artist=$(echo "$artist_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
-                        local escaped_album=$(echo "$album_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
-                        local escaped_track_name=$(echo "$track_name_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
-                        
+                        local basename_file escaped_artist escaped_album escaped_track_name
+                        basename_file=$(basename "$file")
+                        escaped_artist=$(echo "$artist_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        escaped_album=$(echo "$album_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
+                        escaped_track_name=$(echo "$track_name_safe" | sed 's/[.[\*^$()+?{|]/\\&/g')
+
                         if [[ "$basename_file" =~ ^${escaped_artist}[[:space:]]-[[:space:]]${escaped_album}[[:space:]]-[[:space:]]${track_num}[[:space:]]-[[:space:]]${escaped_track_name}\..+ ]]; then
                             found_file="$file"
                             break
@@ -1067,7 +1035,7 @@ check_local_file() {
             fi
             ;;
     esac
-    
+
     echo "$found_file"
 }
 
@@ -1075,61 +1043,60 @@ handle_media() {
     local media_key="$1"
     local media_type="$2"
     local title="$3"
-    local additional_path="$4"
-    
+
     local response
     response=$(curl -s -H "X-Plex-Token: $PLEX_TOKEN" "${PLEX_URL}/library/metadata/${media_key}")
-    
-    local display_title
-    local formatted_title
-    local check_path
+
+    local display_title formatted_title check_path
     case "$media_type" in
         music)
-            local artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
-            local album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
-            local track_num=$(echo "$response" | xmlstarlet sel -t -v "//Track/@index" 2>/dev/null)
-            local track_title=$(echo "$response" | xmlstarlet sel -t -v "//Track/@title" 2>/dev/null)
-            
+            local artist album artist_safe album_safe
+            artist=$(echo "$response" | xmlstarlet sel -t -v "//Track/@grandparentTitle" 2>/dev/null)
+            album=$(echo "$response" | xmlstarlet sel -t -v "//Track/@parentTitle" 2>/dev/null)
+
             # Convert artist and album names to use asterisks for filesystem operations
-            local artist_safe=$(echo "$artist" | tr '/' '*')
-            local album_safe=$(echo "$album" | tr '/' '*')
-            
+            artist_safe=$(echo "$artist" | tr '/' '*')
+            album_safe=$(echo "$album" | tr '/' '*')
+
             # Keep original names for display
             display_title="$artist - $album - $title"
             # Use safe versions for filesystem operations
             formatted_title="$title"
             if [[ "$formatted_title" =~ ^([0-9]+)\.[[:space:]](.*)$ ]]; then
-                local track_num="${BASH_REMATCH[1]}"
-                local track_name="${BASH_REMATCH[2]}"
+                local track_num track_name
+                track_num="${BASH_REMATCH[1]}"
+                track_name="${BASH_REMATCH[2]}"
                 formatted_title="${track_num}. ${track_name}"
             fi
             formatted_title=$(echo "$formatted_title" | tr '/' '*')
             check_path="${artist_safe}/${album_safe}"
             ;;
         episode)
-            local show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
-            local season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
-            local episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
-            local episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
-            local season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
-            
+            local show_title season_num episode_num episode_title season_folder
+            show_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@grandparentTitle" 2>/dev/null)
+            season_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentIndex" 2>/dev/null)
+            episode_num=$(echo "$response" | xmlstarlet sel -t -v "//Video/@index" 2>/dev/null)
+            episode_title=$(echo "$response" | xmlstarlet sel -t -v "//Video/@title" 2>/dev/null)
+            season_folder=$(echo "$response" | xmlstarlet sel -t -v "//Video/@parentTitle" 2>/dev/null)
+
             season_num=$(printf "%02d" "$season_num")
             episode_num=$(printf "%02d" "$episode_num")
-            
+
             # Keep original name for display
             display_title="${show_title} - S${season_num}E${episode_num} - ${episode_title}"
-            display_title=$(echo "$display_title" | sed 's/&amp;/\&/g')
+            display_title="${display_title//&amp;/&}"
 
             # Create safe versions for filesystem
-            local show_title_safe=$(echo "$show_title" | tr '/' '*')
-            local season_folder_safe=$(echo "$season_folder" | tr '/' '*')
-            local episode_title_safe=$(echo "$episode_title" | tr '/' '*')
-            
+            local show_title_safe season_folder_safe episode_title_safe
+            show_title_safe=$(echo "$show_title" | tr '/' '*')
+            season_folder_safe=$(echo "$season_folder" | tr '/' '*')
+            episode_title_safe=$(echo "$episode_title" | tr '/' '*')
+
             formatted_title="${show_title_safe} - S${season_num}E${episode_num} - ${episode_title_safe}"
-            formatted_title=$(echo "$formatted_title" | sed 's/&amp;/\&/g')
+            formatted_title="${formatted_title//&amp;/&}"
 
             check_path="${show_title_safe}/${season_folder_safe}"
-            check_path=$(echo "$check_path" | sed 's/&amp;/\&/g')
+            check_path="${check_path//&amp;/&}"
             ;;
         movie)
             # Keep original name for display
@@ -1143,20 +1110,20 @@ handle_media() {
             return 1
             ;;
     esac
-    
+
     local local_file
     local_file=$(check_local_file "$media_type" "$formatted_title" "$check_path")
-    
+
     local action_prompt="Select Action for: $display_title"
     local action_options="Play from Plex\nDownload"
-    
+
     if [[ -n "$local_file" ]]; then
         action_options="Play Local File\n${action_options}"
     fi
-    
+
     local action
     action=$(echo -e "${action_options}\nCancel" | fzf --reverse --header="$action_prompt" --prompt="Choose action > ")
-    
+
     case "$action" in
         "Play Local File")
             clear
@@ -1171,7 +1138,7 @@ handle_media() {
             ;;
         "Download")
             clear
-            download_media "$media_key" "$media_type" "$display_title" "$check_path"
+            download_media "$media_key" "$media_type" "$display_title"
             ;;
         *)
             return 0
@@ -1182,11 +1149,11 @@ handle_media() {
 select_media() {
     local library_type="$1"
 
-    case "$library_type" in 
+    case "$library_type" in
         movie)
             local libraries
             libraries=$(get_libraries | grep "movie")
-            
+
             if [[ -z "$libraries" ]]; then
                 echo "No movie libraries found."
                 return 1
@@ -1204,18 +1171,18 @@ select_media() {
                     lib_key=$(echo "$libraries" | cut -d'|' -f1)
                 else
                     chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Movie Library" --prompt="Search Movie Libraries > ")
-                    
+
                     if [[ -z "$chosen_library" ]]; then
                         return 1
                     fi
 
                     lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
                 fi
-                
+
                 while true; do
                     local movies
                     movies=$(get_library_contents "$lib_key")
-                    
+
                     if [[ "$movies" == "EMPTY_LIBRARY" ]]; then
                         echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
@@ -1225,10 +1192,10 @@ select_media() {
                             break
                         fi
                     fi
-                    
+
                     local chosen_movie
                     chosen_movie=$(echo "$movies" | cut -d'|' -f1 | fzf --reverse --header="Select Movie" --prompt="Search Movies > ")
-                    
+
                     if [[ -z "$chosen_movie" ]]; then
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1239,16 +1206,16 @@ select_media() {
 
                     local movie_key
                     movie_key=$(echo "$movies" | grep "^${chosen_movie}|" | cut -d'|' -f2)
-                    
+
                     handle_media "$movie_key" "movie" "$chosen_movie"
                 done
             done
             ;;
-        
+
         show)
             local libraries
             libraries=$(get_libraries | grep "show")
-            
+
             if [[ -z "$libraries" ]]; then
                 echo "No TV show libraries found."
                 return 1
@@ -1266,18 +1233,18 @@ select_media() {
                     lib_key=$(echo "$libraries" | cut -d'|' -f1)
                 else
                     chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select TV Show Library" --prompt="Search TV Show Libraries > ")
-                    
+
                     if [[ -z "$chosen_library" ]]; then
                         return 1
                     fi
 
                     lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
                 fi
-                
+
                 while true; do
                     local shows
                     shows=$(get_library_contents "$lib_key")
-                    
+
                     if [[ "$shows" == "EMPTY_LIBRARY" ]]; then
                         echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
@@ -1287,10 +1254,10 @@ select_media() {
                             break
                         fi
                     fi
-                    
+
                     local chosen_show
                     chosen_show=$(echo "$shows" | cut -d'|' -f1 | fzf --reverse --header="Select TV Show" --prompt="Search TV Shows > ")
-                    
+
                     if [[ -z "$chosen_show" ]]; then
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1301,15 +1268,15 @@ select_media() {
 
                     local show_key
                     show_key=$(echo "$shows" | grep "^${chosen_show}|" | cut -d'|' -f2)
-                    
+
                     while true; do
                         local seasons
                         seasons=$(get_seasons "$show_key")
-                        
+
                         local chosen_season
                         chosen_season=$(echo "$seasons" | cut -d'|' -f1 | fzf --reverse --header="TV Show: $chosen_show
 Select Season" --prompt="Search Seasons > ")
-                        
+
                         if [[ -z "$chosen_season" ]]; then
                             break
                         fi
@@ -1320,32 +1287,31 @@ Select Season" --prompt="Search Seasons > ")
                         while true; do
                             local episodes
                             episodes=$(get_episodes "$season_key")
-                            
+
                             local chosen_episode
                             chosen_episode=$(echo "$episodes" | cut -d'|' -f1 | fzf --reverse --header="TV Show: $chosen_show
 Season: $chosen_season
 Select Episode" --prompt="Search Episodes > ")
-                            
+
                             if [[ -z "$chosen_episode" ]]; then
                                 break
                             fi
 
                             local episode_key
                             episode_key=$(echo "$episodes" | grep "^${chosen_episode}|" | cut -d'|' -f2)
-                            
+
                             local episode_title="$chosen_show - $chosen_season - $chosen_episode"
-                            local show_path="${chosen_show// /_}/Season_${chosen_season#Season }"
-                            handle_media "$episode_key" "episode" "$episode_title" "$show_path"
+                            handle_media "$episode_key" "episode" "$episode_title"
                         done
                     done
                 done
             done
             ;;
-        
+
         music)
             local libraries
             libraries=$(get_libraries | grep "artist")
-            
+
             if [[ -z "$libraries" ]]; then
                 echo "No music libraries found."
                 return 1
@@ -1363,18 +1329,18 @@ Select Episode" --prompt="Search Episodes > ")
                     lib_key=$(echo "$libraries" | cut -d'|' -f1)
                 else
                     chosen_library=$(echo "$libraries" | cut -d'|' -f2 | fzf --reverse --header="Select Music Library" --prompt="Search Music Libraries > ")
-                    
+
                     if [[ -z "$chosen_library" ]]; then
                         return 1
                     fi
 
                     lib_key=$(echo "$libraries" | grep "|${chosen_library}|" | cut -d'|' -f1)
                 fi
-                
+
                 while true; do
                     local artists
                     artists=$(get_library_contents "$lib_key")
-                    
+
                     if [[ "$artists" == "EMPTY_LIBRARY" ]]; then
                         echo -e "< Go back" | fzf --reverse --header="Library Empty" --disabled
                         clear
@@ -1384,10 +1350,10 @@ Select Episode" --prompt="Search Episodes > ")
                             break
                         fi
                     fi
-                    
+
                     local chosen_artist
                     chosen_artist=$(echo "$artists" | cut -d'|' -f1 | fzf --reverse --header="Select Artist" --prompt="Search Artists > ")
-                    
+
                     if [[ -z "$chosen_artist" ]]; then
                         if [[ $lib_count -eq 1 ]]; then
                             return 1
@@ -1398,47 +1364,46 @@ Select Episode" --prompt="Search Episodes > ")
 
                     local artist_key
                     artist_key=$(echo "$artists" | grep "^${chosen_artist}|" | cut -d'|' -f2)
-                    
+
                     while true; do
                         local albums
                         albums=$(get_albums "$artist_key")
-                        
+
                         local chosen_album
                         chosen_album=$(echo "$albums" | cut -d'|' -f1 | fzf --reverse --header="Artist: $chosen_artist
 Select Album" --prompt="Search Albums > ")
-                        
+
                         if [[ -z "$chosen_album" ]]; then
                             break
                         fi
 
                         local album_key
                         album_key=$(echo "$albums" | grep "^${chosen_album}|" | cut -d'|' -f2)
-                        
+
                         while true; do
                             local tracks
                             tracks=$(get_tracks "$album_key")
-                            
+
                             local chosen_track
                             chosen_track=$(echo "$tracks" | cut -d'|' -f1 | fzf --reverse --header="Artist: $chosen_artist
 Album: $chosen_album
 Select Track" --prompt="Search Tracks > ")
-                            
+
                             if [[ -z "$chosen_track" ]]; then
                                 break
                             fi
 
                             local track_key
                             track_key=$(echo "$tracks" | grep "^${chosen_track}|" | cut -d'|' -f2)
-                            
+
                             local track_title="$chosen_track"
-                            local music_path="${chosen_artist// /_}/${chosen_album// /_}"
-                            handle_media "$track_key" "music" "$track_title" "$music_path"
+                            handle_media "$track_key" "music" "$track_title"
                         done
                     done
                 done
             done
             ;;
-        
+
         *)
             echo "Unsupported media type"
             return 1
@@ -1449,30 +1414,29 @@ Select Track" --prompt="Search Tracks > ")
 main_menu() {
     local choice
     choice=$(echo -e "Movies\nTV Shows\nMusic\nDownloads\n----------\nUpdate\nHelp\n----------\nQuit" | fzf --reverse --header="Select Media Type" --prompt="Search Menu > ")
-    
+
     if [[ -z "$choice" ]]; then
         clear
         return
     fi
-    
+
     case "$choice" in
         Movies) select_media "movie" ;;
         "TV Shows") select_media "show" ;;
         Music) select_media "music" ;;
         Downloads) downloads_menu ;;
-        Update) 
+        Update)
             echo "Checking for updates..."
             update_script
-            echo "Press Enter to continue..."
-            read
+            read -r -p "Press Enter to continue..."
             clear
             ;;
         Help) display_help ;;
-        "----------") 
+        "----------")
             # Do nothing for the separator
             ;;
         Quit) exit 0 ;;
-        *) 
+        *)
             echo "Invalid selection"
             sleep 1
             clear
@@ -1481,11 +1445,6 @@ main_menu() {
 }
 
 main() {
-    check_dependencies
-    check_plex_credentials
-    create_download_dirs
-    clear_cache
-    
     while getopts "hvu" opt; do
         case ${opt} in
             h )
@@ -1508,7 +1467,12 @@ main() {
         esac
     done
     shift $((OPTIND -1))
-    
+
+    check_dependencies
+    check_plex_credentials
+    create_download_dirs
+    clear_cache
+
     clear
     echo "-------------------------------------------------------------------------"
     echo "CLIX v${VERSION}"
@@ -1516,7 +1480,7 @@ main() {
     echo "-------------------------------------------------------------------------"
     sleep 2
     clear
-    
+
     while true; do
         main_menu
     done
