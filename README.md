@@ -17,9 +17,9 @@ CLIX is a powerful command-line interface tool that allows you to browse and pla
 - Built-in update mechanism
 - Robust error handling and dependency checking
 
-## Support this project
+## ❤️ Support this project
 
-[![Donate](https://raw.githubusercontent.com/jeremehancock/Posteria/main/images/donate-button.png)](https://www.buymeacoffee.com/jeremehancock)
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/jeremehancock)
 
 ## Screenshots
 
